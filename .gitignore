@@ -1,0 +1,11 @@
+/bin/
+/captures/
+*.exe
+/MEMORY.md
+/go.work
+/go.work.sum
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example

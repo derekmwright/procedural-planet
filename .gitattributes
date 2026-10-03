@@ -1,0 +1,13 @@
+* text=auto
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+*.glsl text eol=lf
+*.vert text eol=lf
+*.frag text eol=lf
+*.comp text eol=lf
+*.spv -text
+*.png -text

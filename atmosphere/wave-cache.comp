@@ -1,0 +1,15 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=2,binding=4,rgba16f) uniform writeonly image2D gradients;
+layout(set=2,binding=5,r16f) uniform writeonly image2D crossCurvature;
+#include "parameters.glsl"
+#include "wave-spectrum.glsl"
+void main() {
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(p,imageSize(gradients)))) return;
+    vec2 gradient; vec3 hessian;
+    waveSpectrum(vec2(p)*0.25,gradient,hessian);
+    imageStore(gradients,p,vec4(gradient,hessian.xy));
+    imageStore(crossCurvature,p,vec4(hessian.z));
+}
