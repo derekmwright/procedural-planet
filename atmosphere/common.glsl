@@ -54,11 +54,23 @@ float surfaceShadowCascade(int c,vec3 position,vec3 receiverNormal,out float fad
 float localShadow(vec3 position, vec3 receiverNormal) {
 #ifdef TERRAIN_SHADOWS
     if (planetData.features.x<0.5) return 1.0;
-    float nearFade;
-    float nearShadow=surfaceShadowCascade(0,position,receiverNormal,nearFade);
-    // Inside the near cascade its weight is exactly one. The far lookup was
-    // previously evaluated and then completely overwritten at these pixels.
-    if(nearFade>=1.0) return nearShadow;
+    // The long light-space depth range includes distant mountain CASTERS.
+    // It must not select distant RECEIVERS: otherwise the narrow near-map
+    // column stamps a moving square onto hills along the camera's sun ray.
+    // Positions and the cascade centre are camera-relative. Recover the XY
+    // radius from the projection so selection follows configured coverage.
+    vec3 rowX=vec3(atm.cascadeVP[0][0][0],atm.cascadeVP[0][1][0],atm.cascadeVP[0][2][0]);
+    vec3 rowY=vec3(atm.cascadeVP[0][0][1],atm.cascadeVP[0][1][1],atm.cascadeVP[0][2][1]);
+    float radius=1.0/max(length(rowX),length(rowY));
+    // Finish the spherical blend before the map's square XY border fade.
+    float nearFade=1.0-smoothstep(radius*0.4,radius*0.8,length(position));
+    float nearShadow=1.0;
+    if(nearFade>0.0) {
+        float coverage;
+        nearShadow=surfaceShadowCascade(0,position,receiverNormal,coverage);
+        nearFade*=coverage;
+        if(nearFade>=1.0) return nearShadow;
+    }
     float farFade;
     float farShadow=surfaceShadowCascade(1,position,receiverNormal,farFade);
     return mix(mix(1.0,farShadow,farFade),nearShadow,nearFade);

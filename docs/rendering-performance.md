@@ -318,6 +318,44 @@ x module; core runtime changes are comments. The temporary benchmark engine
 worktree was removed. No alternate application executable was created.
 
 
+## Local shadow receiver selection (2026-10-06)
+
+A bright or dark rectangle could move across distant hills as the camera
+descended along a sun ray. It remained with atmosphere disabled and disappeared
+with shadows disabled. The near cascade selected receivers using its light-space
+box alone: its 180 m wide footprint extends through a 320 km caster volume.
+Where that column intersected distant terrain, the detailed map abruptly replaced
+the much coarser mountain map.
+
+`localShadow` now weights the near map by camera-to-receiver distance. For the
+configured 90 m radius it is fully weighted through 36 m, blends smoothly to the
+far map through 72 m, and contributes nothing beyond that. The radius is derived
+from the cascade matrix; the blend finishes inside the map's square border fade.
+The 200 km sunward caster reach remains intact, so mountains can still shadow
+nearby ground. Air scattering continues to use the mountain cascade. No extra
+passes, targets, or shadow-map samples were added; distant receivers skip the
+near lookup. Far-map resolution and the visible loss of small-shadow detail
+across the blend remain limitations.
+
+Reproduce the dark square with seed 7, erosion enabled, longitude 50.238486,
+latitude 8.874780, altitude 108 m, flight heading 116.34984 degrees and pitch
+-5.41015 degrees (directly away from the sun). Matched 1280x720 captures use
+1,201 synchronous frames, HUD off; diagnostics
+are in the ignored `captures/shadow-square` directory.
+
+`PLANET_GPU_TEST=1 go test ./atmosphere -run TestShadowReceiverSelectionGPU -count=1`
+checks the actual GLSL and engine shadow maps. A small caster 1 km sunward is
+visible to the near map and unresolved by the far map. The fixture requires that
+disagreement, verifies nearby receivers remain shadowed, checks the blend, and
+requires distant receivers in both light-axis directions to use the far map.
+The original shader fails six receiver checks; the corrected shader passes.
+The matched 108 m landscape capture reproduces the dark rectangle before the
+change and removes it afterward, with identical camera and terrain state.
+Package tests, vet, shader compilation and the canonical build pass. Vulkan
+validation is clean for the GPU regression, both valley altitudes, nearby rock
+shadows, sunset mountains and underwater rendering. These captures are visual
+checks, not a performance benchmark.
+
 ## Steep-slope shadow reception (2026-10-04)
 
 A sunlit mountain view revealed repeated triangular/terraced shading. Reproducing
