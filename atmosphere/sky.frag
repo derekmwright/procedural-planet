@@ -31,7 +31,7 @@ void main() {
     bool blocked=ground.x>0.0&&ground.x<ground.y;
     if (blocked) limit=ground.x;
     if(cameraUnderwater()) {
-        float exitDistance=sphereInterval(EYE_PLANET,dir,planetData.water.x).y;
+        float exitDistance=waterInterval(dir).y;
         outColor=vec4(exitDistance>0.0&&exitDistance<limit
             ?underwaterWindow(dir,exitDistance):underwaterColor(vec3(0.0),limit,dir),1.0);
         return;

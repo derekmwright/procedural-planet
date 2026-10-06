@@ -29,6 +29,9 @@ SCENES = {
     "orbit": ["-longitude=100", "-latitude=12.6", "-altitude=300000"],
 }
 VARIANTS = {
+    "prepass-off": ["-depth-prepass=off"],
+    "prepass-auto": ["-depth-prepass=auto"],
+    "prepass-on": ["-depth-prepass=on"],
     "caustic-forward": ["-caustic-cache=true"],
     "caustic-legacy": ["-caustic-cache=false"],
     "half": ["-air-passes=true", "-air-scale=0.5"],
@@ -59,6 +62,9 @@ def summarize(rows):
         "median_window_frame_ms": statistics.median(r["FrameMS"] for r in rows),
         "gpu_pass_ms": {k: statistics.median(r["GPUPasses"].get(k, 0) for r in rows) for k in passes},
         "air_active": sorted({r["AirPassesActive"] for r in rows}),
+        "prepass_active_share": sum(r.get("PrepassActiveSamples", 0) for r in rows) / sum(r["samples"] for r in rows),
+        "median_prepass_estimate": statistics.median(r.get("PrepassEstimate", 0) for r in rows),
+        "pipeline_valid_samples": sum(r.get("PipelineValidSamples", 0) for r in rows),
     }
 
 
@@ -73,6 +79,7 @@ def main():
     parser.add_argument("--warmup", type=int, default=480)
     parser.add_argument("--validate", action="store_true", help="enable validation; adds CPU overhead")
     parser.add_argument("--screenshots", action="store_true", help="capture the first repetition of each variant")
+    parser.add_argument("--pipeline-stats", action="store_true", help="enable fragment/primitive diagnostic queries (leave off for timing baselines)")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.repeats < 1 or args.warmup < 0 or args.frames <= args.warmup + 240:
@@ -87,6 +94,8 @@ def main():
               "-sync-terrain", "-vsync=false", "-profile-frame-step=120", "-hud=false"]
     if args.validate:
         common.append("-validate")
+    if args.pipeline_stats:
+        common.append("-pipeline-stats")
     result = {"executable_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
               "settings": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
               "runs": [], "comparisons": {}}
@@ -125,7 +134,12 @@ def main():
         for variant in args.variants:
             rows = combined[(scene, variant)]
             for row in rows:
-                for key in ("Width", "Height", "Eye", "Forward", "DrawCalls", "Instances", "Triangles"):
+                # A prepass deliberately resubmits geometry. Check the source
+                # scene instead of demanding equal total submission counts.
+                keys = ["Width", "Height", "Eye", "Forward", "TerrainLeaves", "TerrainLevel", "TerrainTriangles", "RockCount", "GrassCount"]
+                if not any(v.startswith("prepass-") for v in args.variants):
+                    keys += ["DrawCalls", "Instances", "Triangles"]
+                for key in keys:
                     if row[key] != reference[key]:
                         raise RuntimeError(f"Unsettled or mismatched scene {scene}/{variant}: {key}")
             result["comparisons"][f"{scene}/{variant}"] = summarize(rows)

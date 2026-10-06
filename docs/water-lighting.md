@@ -522,3 +522,57 @@ passed for shallow/coast views, legacy waves with inline water, repeated moving
 cache updates, oceans off, and the3600-frame descent/ascent. The latter enters
 and exits water; focusing enables and disables as expected. Files are in
 `captures/caustic-stability-validation`. The canonical executable is rebuilt.
+## Waterline stability during terrain streaming
+
+Rocks are anchored to the analytic terrain surface, including erosion. They no
+longer use the camera's collision floor (`max(analytic, current mesh height)`),
+which could lift submerged rocks through the sea while a coarse patch was
+visible. A support weight scales instances out when mesh/analytic disagreement
+exceeds what the embedded rock base can hide. The same instance data drives
+color and shadow draws. LOD replacements update support without moving anchors.
+
+Water intersection uses a CPU-computed signed eye height in metres and a stable
+quadratic root calculation. This avoids subtracting two roughly 500 km roots
+to locate a surface centimetres or metres away. Sky, terrain, atmospheric
+endpoints and underwater scattering share that intersection and underwater
+classification. Water shadow receivers remain camera-relative, and material
+depth/caustics use the actual surface position rather than the shadow-biased
+position. No additional rendering pass is introduced.
+
+Regression tests cover fixed rock anchors through coastal refinement, removal
+of unsupported instances, and millimetre-scale waterline motion on 500 km and
+Earth-sized spheres. The reproduced old placement lifted visible coastal rocks
+by up to 2.8 m and could create false waterline crossings. Captures in the ignored
+`captures/rock-waterline` directory show the early approach, settled surface and
+underwater views with shadows disabled. The early approach is intentionally
+unsettled and is not a matched-geometry performance benchmark; settled surface
+and underwater camera/terrain/rock counts match between builds. The old floating
+rocks disappear in the corrected approach view, while underwater rocks remain.
+
+Shader generation, full tests, vet and the canonical build passed. Vulkan
+validation passed for eroded ridges, sunset mountains, seabed and a 3600-frame
+asynchronous erosion descent/ascent tour. These cover the reproduced defect;
+other locations may still expose unrelated temporal artifacts.
+
+## Rock flicker during camera motion
+
+A separate temporal defect survived those placement fixes: ordinary engine
+instance updates overwrite a shared GPU buffer while previous frames can still
+read it. Camera rebasing then makes a submitted frame use the next frame's rock
+positions, producing momentary rock silhouettes over water. Standing still or
+waiting for a screenshot can hide the race. Disabling shadows does not fix it.
+
+`instance_stream.go` protects rock and grass snapshots with a small reusable
+buffer pool. A set returns to the pool only after the engine's retirement
+callback; unchanged placements need no upload, and minimized updates wait until
+restore. Ordinary group culling, shadow casters and depth-prepass participation
+are preserved. This is an application workaround for
+[GlyphEngine #188](https://github.com/derekmwright/glyphengine/issues/188).
+
+The 3200x1800 moving-camera stress reproduction freezes lighting and captures
+the previous frame after the next placement upload. The old path varies at
+4,167 pixels by more than 8 channel levels between identical views; the protected
+path produces four pixel-identical captures. Both paths pass ordinary Vulkan
+validation, so validation alone cannot diagnose the host-write race. These
+captures include readback stalls and are not performance measurements. The water
+shader and its appearance were not changed by this fix.

@@ -130,11 +130,13 @@ func (t *terrain) upload(e *glyph.Engine, m planet.Mesh, streaming bool) (patchE
 }
 func (t *terrain) init(e *glyph.Engine) error {
 	for _, k := range t.lod.SortedLeaves() {
-		p, err := t.upload(e, t.world.BuildTerrainPatch(k), false)
+		mesh := t.world.BuildTerrainPatch(k)
+		p, err := t.upload(e, mesh, false)
 		if err != nil {
 			return err
 		}
 		t.patches[k] = p
+		t.lod.SetGeometricError(k, mesh.GeometricError)
 		e.C.Hidden.Remove(p.entity)
 	}
 	return nil
@@ -198,6 +200,7 @@ func (t *terrain) update(e *glyph.Engine, eye planet.Vec) error {
 				e.C.Hidden.Set(t.patches[r.key].entity, &glyph.Hidden{})
 				for i, c := range r.key.Children() {
 					t.patches[c] = t.uploaded[i]
+					t.lod.SetGeometricError(c, r.meshes[i].GeometricError)
 					e.C.Hidden.Remove(t.uploaded[i].entity)
 				}
 				t.generationMS = float64(r.duration.Microseconds()) / 1000

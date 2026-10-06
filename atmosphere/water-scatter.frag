@@ -17,6 +17,6 @@ void main() {
     vec4 point=pc.inverseVP*vec4(uv*2.0-1.0,max(depth,1e-8),1.0);
     vec3 position=point.xyz/point.w;
     vec3 direction=normalize(position);
-    float travel=min(length(position)*0.001,max(sphereInterval(EYE_PLANET,direction,planetData.water.x).y,0.0));
+    float travel=min(length(position)*0.001,max(waterInterval(direction).y,0.0));
     outColor=vec4(underwaterShafts(direction,travel),depth);
 }

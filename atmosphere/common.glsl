@@ -19,7 +19,7 @@
 // Positions are camera-relative metres; the spherical transmission LUT stays
 // independent of terrain and can still be reused as the camera moves.
 #ifdef TERRAIN_SHADOWS
-float surfaceShadowCascade(int c,vec3 position,float ndl,out float fade) {
+float surfaceShadowCascade(int c,vec3 position,vec3 receiverNormal,out float fade) {
     vec3 p=(atm.cascadeVP[c]*vec4(position,1.0)).xyz;
     p.xy=p.xy*0.5+0.5;
     fade=0.0;
@@ -27,30 +27,40 @@ float surfaceShadowCascade(int c,vec3 position,float ndl,out float fade) {
     float edge=min(min(p.x,1.0-p.x),min(p.y,1.0-p.y));
     fade=smoothstep(0.01,0.10,edge)*smoothstep(0.0,0.04,min(p.z,1.0-p.z));
     if(fade<=0.0) return 1.0;
-    // Convert a world-space bias using the actual orthographic depth row.
-    // Coverage can change without silently scaling the receiver bias.
-    float depthScale=length(vec3(atm.cascadeVP[c][0][2],atm.cascadeVP[c][1][2],atm.cascadeVP[c][2][2]));
-    float xyScale=length(vec3(atm.cascadeVP[c][0][0],atm.cascadeVP[c][1][0],atm.cascadeVP[c][2][0]));
-    float worldTexel=2.0/(xyScale*float(textureSize(terrainShadowMap,0).x));
-    float bias=(c==0 ? 0.04+0.15*(1.0-ndl)
-        : worldTexel*(0.15+1.5*(1.0-ndl)))*depthScale;
+    // Fit the comparison depth to the receiving triangle, not its smoothed
+    // lighting normal. A constant reference for all PCF taps makes a steep
+    // slope shadow itself, especially in the 240 km mountain cascade.
+    vec3 rowX=vec3(atm.cascadeVP[c][0][0],atm.cascadeVP[c][1][0],atm.cascadeVP[c][2][0]);
+    vec3 rowY=vec3(atm.cascadeVP[c][0][1],atm.cascadeVP[c][1][1],atm.cascadeVP[c][2][1]);
+    vec3 rowZ=vec3(atm.cascadeVP[c][0][2],atm.cascadeVP[c][1][2],atm.cascadeVP[c][2][2]);
+    float depthScale=length(rowZ);
+    float along=dot(receiverNormal,rowZ/depthScale);
+    float safeAlong=(along<0.0?-1.0:1.0)*max(abs(along),0.05);
+    vec2 gradient=-2.0*depthScale/safeAlong*vec2(
+        dot(receiverNormal,rowX)/dot(rowX,rowX),
+        dot(receiverNormal,rowY)/dot(rowY,rowY));
     vec2 texel=1.0/vec2(textureSize(terrainShadowMap,0).xy);
+    // Hardware PCF compares four depths using one reference. Cover the
+    // remaining half-texel slope inside that footprint, plus a small metre bias.
+    float bias=dot(abs(gradient),texel)*0.5+(c==0?0.04:0.5)*depthScale;
     float sum=0.0;
-    for(int y=-1;y<=1;y+=2) for(int x=-1;x<=1;x+=2)
-        sum+=textureGrad(terrainShadowMap,vec4(p.xy+vec2(x,y)*texel,float(c),p.z-bias),vec2(0),vec2(0));
+    for(int y=-1;y<=1;y+=2) for(int x=-1;x<=1;x+=2) {
+        vec2 offset=vec2(x,y)*texel;
+        sum+=textureGrad(terrainShadowMap,vec4(p.xy+offset,float(c),p.z+dot(gradient,offset)-bias),vec2(0),vec2(0));
+    }
     return sum*0.25;
 }
 #endif
-float localShadow(vec3 position, float ndl) {
+float localShadow(vec3 position, vec3 receiverNormal) {
 #ifdef TERRAIN_SHADOWS
     if (planetData.features.x<0.5) return 1.0;
     float nearFade;
-    float nearShadow=surfaceShadowCascade(0,position,ndl,nearFade);
+    float nearShadow=surfaceShadowCascade(0,position,receiverNormal,nearFade);
     // Inside the near cascade its weight is exactly one. The far lookup was
     // previously evaluated and then completely overwritten at these pixels.
     if(nearFade>=1.0) return nearShadow;
     float farFade;
-    float farShadow=surfaceShadowCascade(1,position,ndl,farFade);
+    float farShadow=surfaceShadowCascade(1,position,receiverNormal,farFade);
     return mix(mix(1.0,farShadow,farFade),nearShadow,nearFade);
 #else
     return 1.0;
@@ -87,6 +97,25 @@ vec2 sphereInterval(vec3 origin, vec3 dir, float radius) {
     if (h < 0.0) return vec2(1.0, -1.0);
     h = sqrt(max(h, 0.0));
     return vec2(-b - h, -b + h);
+}
+
+// Water is often centimetres from the camera on a 500 km planet. Subtracting
+// the two large roots quantizes that near hit, differently across tiny rock
+// triangles and the seabed behind them. Use the accurately packed signed height
+// and the product of roots to recover the near intersection without cancellation.
+vec2 waterInterval(vec3 direction) {
+    float radius=planetData.water.x;
+    float height=planetData.detail.x*0.001;
+    float a=dot(direction,direction);
+    float b=dot(EYE_PLANET,direction);
+    float c=height*(2.0*radius+height);
+    float discriminant=b*b-a*c;
+    if(discriminant<0.0) return vec2(1.0,-1.0);
+    float root=sqrt(max(discriminant,0.0));
+    float q=-b-(b<0.0?-root:root);
+    if(abs(q)<0.0000001) return vec2(0.0);
+    float t0=q/a,t1=c/q;
+    return vec2(min(t0,t1),max(t0,t1));
 }
 
 vec2 densityAt(vec3 p) {

@@ -136,6 +136,9 @@ func (g *game) Init(e *glyph.Engine) error {
 		g.cam.flightView()
 	}
 	g.camera(e)
+	if g.lastError != nil {
+		return g.lastError
+	}
 	log.Printf("seed %d, radius %.0f km; adaptive terrain to level %d; Tab toggles flight", g.world.Seed, g.world.Radius/1000, g.terrain.lod.MaxLevel)
 	return nil
 }
@@ -148,10 +151,18 @@ func (g *game) camera(e *glyph.Engine) {
 	}
 	g.terrain.renderPositions(e, g.cam.eye)
 	rocksStart := time.Now()
-	g.rocks.update(e, g.terrain, g.cam.eye, g.cam.clearance)
+	if err := g.rocks.update(e, g.terrain, g.cam.eye, g.cam.clearance); err != nil {
+		g.lastError = err
+		e.Close()
+		return
+	}
 	g.performance.rocksMS = milliseconds(rocksStart)
 	grassStart := time.Now()
-	g.grass.update(e, g.terrain, g.cam.eye, g.cam.forward, g.cam.clearance, g.elapsed, g.grassEnabled)
+	if err := g.grass.update(e, g.terrain, g.cam.eye, g.cam.forward, g.cam.clearance, g.elapsed, g.grassEnabled); err != nil {
+		g.lastError = err
+		e.Close()
+		return
+	}
 	g.performance.grassMS = milliseconds(grassStart)
 	e.SetCamera(mgl32.Vec3{}, vec(g.cam.forward), vec(g.cam.up))
 	parameters := atmosphere.FrameParameters(g.world.Radius, [3]float64(g.cam.eye), g.atmosphereEnabled)
@@ -162,7 +173,7 @@ func (g *game) camera(e *glyph.Engine) {
 		parameters.Planet[3] = 1
 	}
 	if g.oceanEnabled {
-		parameters.Water[0] = float32((g.world.Radius + g.seaLevel) / 1000)
+		parameters.SetOcean(g.world.Radius, g.seaLevel, [3]float64(g.cam.eye))
 	}
 	if g.causticsDebug {
 		parameters.Features[3] = 1
@@ -347,6 +358,8 @@ func run() error {
 	profile := flag.String("profile", "", "append rolling 120-frame performance reports to a JSONL file")
 	profileFrameStep := flag.Int("profile-frame-step", 0, "record every N rendered frames (0: once per second; 120: non-overlapping windows)")
 	vsync := flag.Bool("vsync", true, "enable display frame pacing")
+	prepass := flag.String("depth-prepass", "auto", "opaque depth prepass: off, auto, or on (comparison only)")
+	pipelineStats := flag.Bool("pipeline-stats", false, "record per-pass GPU fragment and clipping counters")
 	air := flag.Bool("atmosphere", true, "enable spherical atmosphere and terrain haze")
 	vegetation := flag.Bool("vegetation", true, "enable colored vegetation regions")
 	grass := flag.Bool("grass", true, "enable nearby grass blades (G toggles)")
@@ -355,6 +368,9 @@ func run() error {
 	grassSlope := flag.Float64("grass-slope-max", 38, "maximum grass slope in degrees (5 to 60)")
 	ocean := flag.Bool("ocean", true, "enable spherical sea-level water (O toggles)")
 	seaLevel := flag.Float64("sea-level", 250, "sea level in meters above planet reference radius")
+	erosion := flag.Bool("erosion", false, "enable experimental drainage-guided valley and canyon incision")
+	erosionStrength := flag.Float64("erosion-strength", 1, "incision strength, 0..2 (requires -erosion)")
+	erosionDemo := flag.Bool("erosion-demo", false, "enable erosion and start above a nearby canyon")
 	materials := flag.Bool("materials", true, "enable foreground surface detail (M toggles)")
 	shadows := flag.Bool("shadows", true, "enable mountain, terrain and rock shadows (H toggles)")
 	rays := flag.Bool("sun-rays", true, "enable atmospheric screen-space sun shafts")
@@ -370,6 +386,19 @@ func run() error {
 	deferredAir := flag.Bool("air-passes", true, "separate view atmosphere with depth-aware reconstruction (false: inline reference)")
 	airScale := flag.Float64("air-scale", 0.5, "atmosphere resolution scale (0.5 or 1 for quality comparisons)")
 	flag.Parse()
+	if math.IsNaN(*erosionStrength) || math.IsInf(*erosionStrength, 0) || *erosionStrength < 0 || *erosionStrength > 2 {
+		return fmt.Errorf("erosion-strength must be between 0 and 2")
+	}
+	prepassMode := renderer.DepthPrepassOff
+	switch *prepass {
+	case "off":
+	case "auto":
+		prepassMode = renderer.DepthPrepassAuto
+	case "on":
+		prepassMode = renderer.DepthPrepassOn
+	default:
+		return fmt.Errorf("depth-prepass must be off, auto, or on")
+	}
 	if *profileFrameStep < 0 {
 		return fmt.Errorf("profile-frame-step must be nonnegative")
 	}
@@ -409,6 +438,10 @@ func run() error {
 	}
 	opts := []glyph.Option{glyph.WithTitle("Procedural Planet - Orbit to Surface"), glyph.WithWindowSize(*width, *height), glyph.WithMSAA(4), glyph.WithProjection(60, 0.1, float32(*radius*1000*20)), glyph.WithValidation(*validate), glyph.WithInterpolation(false), glyph.WithVSync(*vsync)}
 	opts = append(opts, glyph.WithShaders(atmosphere.Shaders()))
+	opts = append(opts, glyph.WithDepthPrepass(prepassMode))
+	if *pipelineStats {
+		opts = append(opts, glyph.WithPipelineStatistics())
+	}
 	if *frames > 0 {
 		opts = append(opts, glyph.WithMaxFrames(*frames), glyph.WithFixedFrameTime(time.Second/60))
 	}
@@ -436,6 +469,31 @@ func run() error {
 	g.seaLevel = *seaLevel
 	g.startHeading = *heading
 	g.startPitch = *pitch
+	if *erosion || *erosionDemo {
+		start := time.Now()
+		log.Print("preparing terrain erosion (the default solve takes about ten seconds)...")
+		world, err := g.world.WithErosion(planet.ErosionSettings{SeaLevel: *seaLevel, Strength: *erosionStrength})
+		if err != nil {
+			return err
+		}
+		g.world = world
+		stats := world.ErosionStats()
+		log.Printf("erosion: %d drainage nodes, %d channel samples, %d iterations, %.1f MiB cache; built in %s", stats.Nodes, stats.DrainageSamples, stats.Iterations, float64(stats.CacheBytes)/(1024*1024), time.Since(start).Round(time.Millisecond))
+		if *erosionDemo {
+			lon, lat := *longitude*math.Pi/180, *latitude*math.Pi/180
+			near := planet.Vec{math.Sin(lon) * math.Cos(lat), math.Sin(lat), math.Cos(lon) * math.Cos(lat)}
+			d, downstream, ok := world.ErosionPreview(near)
+			if !ok {
+				return fmt.Errorf("no erosion channel near this region; choose a different longitude/latitude or use -erosion without -erosion-demo")
+			}
+			north, east := northEast(d)
+			g.startLongitude, g.startLatitude = math.Atan2(d[0], d[2])*180/math.Pi, math.Asin(d[1])*180/math.Pi
+			g.startFlight, g.startAltitude, g.startPitch = true, 1600, -24
+			g.startHeading = math.Atan2(downstream.Dot(east), downstream.Dot(north)) * 180 / math.Pi
+			base := planet.Planet{Seed: *seed, Radius: g.world.Radius}
+			log.Printf("erosion view: longitude %.6f latitude %.6f heading %.3f; incision %.0f m", g.startLongitude, g.startLatitude, g.startHeading, base.Elevation(d)-world.Elevation(d))
+		}
+	}
 	g.waterPasses = *waterPasses
 	g.causticsDebug = *causticsDebug
 	g.atmosphereCache = *atmosphereCache

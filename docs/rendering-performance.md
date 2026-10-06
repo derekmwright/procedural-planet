@@ -1,5 +1,75 @@
 # Rendering budget and cloud preparation
 
+## Engine update and adaptive depth prepass (2026-10-04)
+
+The application now pins engine `5a0d940` and defaults to
+`-depth-prepass=auto`. Engine #181 adds a bounds-based estimate and hysteresis
+to decide whether to render opaque depth before the expensive surface shaders.
+`-depth-prepass=off` retains the baseline; `on` forces the extra pass for tests.
+This reduces hidden fragment shading, not terrain LOD popping or mesh complexity.
+
+Measured on the RX 7900 XTX at 3840x2054, MSAA 4, fixed 60 Hz simulation,
+HUD/vsync/validation/pipeline queries off. Two interleaved runs per variant,
+1201 frames each, 600-frame warmup, five complete 120-frame windows per run.
+Values below are medians of the ten window means, not pooled frame percentiles.
+Camera, source terrain counts/LOD and rock/grass counts matched. Submission
+totals intentionally differ because the prepass submits geometry a second time.
+
+| View | Prepass off GPU ms | Auto GPU ms |
+| --- | ---: | ---: |
+| Mountains | 3.693 | 3.401 |
+| Shoreline | 16.989 | 6.520 |
+| Underwater seabed | 2.655 | 2.540 |
+| Ground | 3.838 | 3.054 |
+| Orbit | 2.758 | 1.698 |
+
+Auto selected the prepass in every settled window of these views; this does not
+prove that its estimate is optimal for every camera. Paired final images were
+pixel-identical for mountains, ground and orbit. Coast and seabed differed by
+at most one 8-bit channel level (RMS 0.000206/255). Benchmark evidence is local
+in `captures/engine-prepass-review` and `captures/engine-prepass-controls`.
+Reproduce with `python tools/profile_scene.py --variants prepass-off prepass-auto --warmup 600 --screenshots`, selecting the desired scenes.
+
+Final Vulkan validation passed for orbit, mountains, shoreline, underwater and
+a 3600-frame moving tour that crossed the water surface. Diagnostic runs used
+the default auto mode with pipeline queries enabled; all four settled views
+reported complete 120-sample counter windows. Their 1600x900 captures were
+pixel-identical to the README images from the previous engine pin. These
+validation runs are separate from the query-free 4K timing measurements above.
+
+Engine #167 now includes application work in total submissions. The HUD and
+JSONL separately expose that work, including each application pass and compute
+dispatch counts; a larger triangle total is not automatically a scene regression.
+The caustic projection's 2,064,386 submitted triangles are now visible there.
+
+`-pipeline-stats` enables engine #183's delayed GPU fragment-invocation and
+post-clip primitive counters. JSONL contains rolling means and valid-sample
+counts, omitting unbracketed passes rather than reporting them as measured zero.
+These differ from CPU submission counts. On the calibrated RX 7900 XTX the
+fragment counter excludes helper lanes: it is not a quad-overshading measurement.
+Queries stay off for ordinary timing runs. `--pipeline-stats` enables them in
+the comparison script when diagnosing work rather than establishing timing.
+
+### Terrain streaming implications
+
+- Async uploads, upload tickets, runtime-safe release, `MeshArena.AllocAsync`
+  and opt-in range batching are available. The showcase still uses standalone
+  async meshes; shared arena storage/batching needs a separate measured migration.
+- Instance LOD with dithered transitions and GPU selection is available for
+  repeated foliage/props. It does not provide a parent-to-four-children morph
+  for the current unique quadtree patches.
+- [Engine #156](https://github.com/derekmwright/glyphengine/issues/156), an
+  authored-mesh cluster DAG, remains parked. #174 recorded and removed the Hi-Z
+  experiment; closed #154 is not evidence of a shipped occlusion-culling path.
+- Surface error bounds, neighbor-compatible morphs, erosion/drainage generation
+  and collision agreement remain application work. Merely streaming faster does
+  not make a discrete patch swap visually continuous.
+- Filed [#186](https://github.com/derekmwright/glyphengine/issues/186) for shared
+  application deformation inputs across lit/shadow/prepass vertex stages and
+  [#187](https://github.com/derekmwright/glyphengine/issues/187) for the missing
+  named application-pass pipeline counters. Their local proposals are in
+  `docs/engine-issues/`.
+
 ## Current ownership
 
 Surface BRDFs, material detail and direct mountain shadows remain at full
@@ -246,3 +316,92 @@ The final canonical executable uses engine 17662f1. Its changes after the
 controlled f61683a benchmark export shader includes and introduce the optional
 x module; core runtime changes are comments. The temporary benchmark engine
 worktree was removed. No alternate application executable was created.
+
+
+## Steep-slope shadow reception (2026-10-04)
+
+A sunlit mountain view revealed repeated triangular/terraced shading. Reproducing
+it with erosion disabled and then disabling shadows isolated the broad pattern
+to our surface shadow lookup. Disabling material detail did not remove it.
+
+The previous four-tap PCF lookup compared neighboring shadow-map texels against
+one depth, with a bias based on the smoothed lighting normal. On a steep triangle,
+those texels belong at different depths. The far cascade covers 240 km, making
+that discrepancy particularly large. The revised lookup fits each tap's reference
+depth to the actual triangle plane. Screen derivatives are evaluated before
+water/material branches; the shading normal remains smooth. Water supplies its
+analytic radial normal. A residual bias covers the hardware filter footprint,
+and the calculation guards near-parallel planes. Sample count and pass count
+are unchanged.
+
+This uses the receiver-plane principle described in Microsoft's
+[Cascaded Shadow Maps documentation](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps#calculating-a-per-texel-depth-bias-with-ddx-and-ddy-for-large-pcfs),
+with the depth gradient obtained from the geometric normal and orthographic
+projection axes. No engine modification was necessary.
+
+Reproduction: longitude 1, latitude 38.5, altitude 50, flight heading 84.43,
+pitch -15; 1600x900, 1201 synchronous frames, VSync and HUD off. The before/after
+cameras and terrain counts matched. Five settled 120-frame windows measured
+median window GPU means of 0.820/0.819 ms (opaque 0.135/0.138 ms), with validation
+off for those timings. This single-pose smoke comparison does not establish a
+performance change; it showed no material increase there.
+
+Captures and JSONL logs are under `captures/terrain-facets`: `before`, `after`,
+`no-shadows`, `no-materials`, `eroded`, and `after-eroded`. A temporary no-skirts
+capture was diagnostic only; it introduced cracks and did not explain the broad
+bands. Skirt coverage is restored. Actual LOD silhouette coarseness remains a
+separate mesh issue; this change does not add geometric refinement or morphing.
+
+Package tests, vet, shader regeneration and the canonical build passed. Vulkan
+validation passed for the corrected mountain, erosion-enabled variant, sunset
+mountain shadows, ground rocks, underwater view and 3600-frame asynchronous
+erosion tour. Mountain and rock shadows were visually checked after the change.
+
+### Terrain refinement from measured relief
+
+Terrain workers now measure radial deviation between the analytic surface and
+each cell's rendered diagonal midpoint, before adding skirts. The LOD selector
+uses the maximum sampled deviation alongside the existing distance score. An
+angular target of 0.004 radians triggers extra detail; the score boost is capped
+at 2x, and the 960-leaf budget and 2:1 neighbor balance are unchanged. This is a
+sampled estimate, not a certified bound or a pixel-error guarantee. It cannot
+detect every feature between samples, and the cap can leave error above target.
+
+Error metadata becomes active with the four-child GPU replacement, stays with
+hidden parents for merge decisions, and is discarded with merged children.
+The extra elevation queries occur during mesh generation, not per frame or in
+shaders. This improves sampling density without changing the heightfield; it
+does not stitch edges or morph transitions. More refined patches still cost
+generation time, memory and GPU geometry work.
+
+The CPU-only erosion reproduction at the mountain screenshot pose changed from
+261 to 363 settled leaves. The p95 of per-patch sampled angular-error estimates
+in the forward 100 km region fell from 22.93 to 16.10 milliradians. These numbers
+use patch-center distance and are a refinement diagnostic, not rendered pixel
+measurements. Tests cover ridge error reduction, near-ground detail, selection
+hysteresis, cube-face balance, the leaf cap and metadata retirement on ascent.
+Full tests, vet and the planet race check pass. The canonical executable was
+rebuilt and matched 3840x2054 captures were inspected. The eroded ridge shows
+more resolved valley sides and distant outlines. Camera position/direction and
+rock/grass counts matched exactly between builds; terrain counts remained
+settled during the measured windows.
+
+| View | GPU before / after (ms) | Leaves before / after |
+| --- | ---: | ---: |
+| Eroded ridge | 2.607 / 2.675 | 261 / 363 |
+| Seabed | 2.795 / 2.785 | 378 / 390 |
+| Ground | 3.030 / 2.997 | 375 / 387 |
+
+These are median window means from five complete 120-frame windows per run,
+after warmup, with validation/VSync off and synchronous terrain generation.
+One before/after pair per view is a smoke comparison, not a broad performance
+claim. The ridge's terrain CPU update increased from 1.193 to 1.423 ms; the extra
+geometry is not free even though GPU impact was small in these views. Source
+generation also performs 1024 additional elevation queries per new patch.
+
+Separate Vulkan validation runs passed for the eroded ridge, sunset mountains
+and seabed. A 3600-frame asynchronous erosion tour reached 2 m ground clearance,
+crossed water, peaked at 396 leaves and returned to 96 orbital leaves without
+validation diagnostics. Captures, profiles, executable hashes and reproduction
+scripts are in the ignored `captures/terrain-error` directory. Skirt seams and
+LOD morphing remain separate limitations.

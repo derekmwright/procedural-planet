@@ -18,7 +18,7 @@ type grassResult struct {
 	tufts  []grassTuft
 }
 type grassScatter struct {
-	set                               *renderer.InstanceSet
+	set                               *instanceStream
 	placements                        []renderer.MeshInstance
 	tufts                             []grassTuft
 	anchor                            planet.Vec
@@ -118,12 +118,12 @@ func (g *grassScatter) init(e *glyph.Engine, p planet.Planet, synchronous bool, 
 	if err != nil {
 		return err
 	}
-	g.set, err = e.Renderer().CreateInstanceSet(mesh, 20000, nil)
+	g.set, err = newInstanceStream(e.Renderer(), mesh, 20000)
 	if err != nil {
 		return err
 	}
 	id := e.Spawn()
-	e.C.InstancedMesh.Set(id, &glyph.InstancedMesh{Set: g.set})
+	e.C.InstancedMesh.Set(id, &g.set.InstancedMesh)
 	e.C.MeshRef.Set(id, &glyph.MeshRef{Mesh: mesh, Roughness: 0.9})
 	e.C.DoubleSided.Set(id, &glyph.DoubleSided{})
 	e.C.NoCastShadow.Set(id, &glyph.NoCastShadow{})
@@ -154,7 +154,7 @@ func (g *grassScatter) close() {
 		g.wg.Wait()
 	}
 }
-func (g *grassScatter) update(e *glyph.Engine, t *terrain, eye, forward planet.Vec, clearance, elapsed float64, enabled bool) {
+func (g *grassScatter) update(e *glyph.Engine, t *terrain, eye, forward planet.Vec, clearance, elapsed float64, enabled bool) error {
 	g.placements = g.placements[:0]
 	g.count = 0
 	newResult := false
@@ -219,5 +219,5 @@ func (g *grassScatter) update(e *glyph.Engine, t *terrain, eye, forward planet.V
 		}
 	}
 	g.count = len(g.placements)
-	e.Renderer().UpdateInstanceSet(g.set, g.placements)
+	return g.set.update(e.Renderer(), g.placements)
 }

@@ -33,6 +33,19 @@ func Coordinates(d Vec) (face int, u, v float64) {
 type LOD struct {
 	Leaves   map[Patch]bool
 	MaxLevel int
+	errors   map[Patch]float64
+}
+
+// SetGeometricError publishes the worker's estimate when a mesh becomes active.
+// Keep hidden parent estimates for merge decisions; Merge retires child values.
+func (l *LOD) SetGeometricError(k Patch, metres float64) {
+	if math.IsNaN(metres) || math.IsInf(metres, 0) || metres < 0 {
+		return
+	}
+	if l.errors == nil {
+		l.errors = make(map[Patch]float64)
+	}
+	l.errors[k] = metres
 }
 
 func NewLOD(radius float64) *LOD {
@@ -136,6 +149,7 @@ func (l *LOD) Merge(k Patch) bool {
 	}
 	for _, c := range k.Children() {
 		delete(l.Leaves, c)
+		delete(l.errors, c)
 	}
 	l.Leaves[k] = true
 	return true
@@ -154,6 +168,17 @@ func (p Planet) DetailScore(k Patch, eye Vec) float64 {
 	distance := math.Sqrt(delta.Dot(delta))
 	return p.Radius * s / math.Max(distance, 1)
 }
+
+// Preserve the existing near-ground sampling, but allow one extra level
+// where the measured loss of relief subtends more than about 0.004 radians.
+// This is an angular quality target, independent of viewport size. The cap keeps
+// one sharp sample from consuming the fixed leaf budget across distant terrain.
+func (l *LOD) detailScore(p Planet, k Patch, eye Vec) float64 {
+	score := p.DetailScore(k, eye)
+	_, _, span := k.Bounds()
+	errorScore := score * l.errors[k] * (2.2 / 0.004) / (p.Radius * span)
+	return math.Max(score, math.Min(score*2, errorScore))
+}
 func (l *LOD) NextSplit(p Planet, eye Vec) (Patch, bool) {
 	bestScore := 2.2
 	var best Patch
@@ -162,7 +187,7 @@ func (l *LOD) NextSplit(p Planet, eye Vec) (Patch, bool) {
 		if k.Level >= l.MaxLevel {
 			continue
 		}
-		score := p.DetailScore(k, eye)
+		score := l.detailScore(p, k, eye)
 		if score > bestScore {
 			best = k
 			bestScore = score
@@ -193,7 +218,7 @@ func (l *LOD) NextMerge(p Planet, eye Vec) (Patch, bool) {
 	required := make(map[Patch]bool)
 	var queue []Patch
 	for k := range l.Leaves {
-		if k.Level < l.MaxLevel && p.DetailScore(k, eye) > 2.2 {
+		if k.Level < l.MaxLevel && l.detailScore(p, k, eye) > 2.2 {
 			required[k] = true
 			queue = append(queue, k)
 		}
@@ -210,7 +235,7 @@ func (l *LOD) NextMerge(p Planet, eye Vec) (Patch, bool) {
 	}
 	for _, c := range l.SortedLeaves() {
 		k := c.Parent()
-		if k.Level >= 2 && p.DetailScore(k, eye) < 1.45 && l.CanMerge(k) {
+		if k.Level >= 2 && l.detailScore(p, k, eye) < 1.45 && l.CanMerge(k) {
 			// A neighbour that still needs to split may have forced these
 			// children into existence. Keep them until that demand is gone;
 			// otherwise split/merge can oscillate before the neighbour is ready.
@@ -258,6 +283,19 @@ func (p Planet) MeshElevation(k Patch, segments int, d Vec) float64 {
 // balanced LODs. This is a coverage technique, not watertight edge stitching.
 func (p Planet) BuildTerrainPatch(k Patch) Mesh {
 	m := p.BuildPatch(k, Segments)
+	// Sample the shared diagonal of each pair of triangles. Its chord midpoint
+	// is on the rendered mesh, so the radial difference includes both curvature
+	// and missing terrain detail (including erosion). All work runs at mesh build
+	// time, never in the per-frame LOD selector or fragment shader.
+	for y := 0; y < Segments; y++ {
+		for x := 0; x < Segments; x++ {
+			b, c := y*(Segments+1)+x+1, (y+1)*(Segments+1)+x
+			mid := m.Origin.Add(m.Vertices[b].Position.Add(m.Vertices[c].Position).Mul(0.5))
+			radius := math.Sqrt(mid.Dot(mid))
+			delta := p.Elevation(mid.Mul(1/radius)) - (radius - p.Radius)
+			m.GeometricError = math.Max(m.GeometricError, math.Abs(delta))
+		}
+	}
 	_, _, span := k.Bounds()
 	cell := p.Radius * span / Segments
 	depth := math.Max(1, cell*2)

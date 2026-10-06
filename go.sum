@@ -2,6 +2,8 @@ github.com/CannibalVox/cgoparam v1.1.0 h1:6UDDhOpT06csFE2vkcanXsIJmebMc9o+6Vzhvi
 github.com/CannibalVox/cgoparam v1.1.0/go.mod h1:9LDFLuHVgE+IIBDd1QFN3dPqmGQN9bS6H+NPizMv2fA=
 github.com/derekmwright/glyphengine v0.0.0-20261002214753-17662f149d15 h1:VI0cyciKJflwE2XiiwW87wKzdkDLwbSs/zhd9PjPucw=
 github.com/derekmwright/glyphengine v0.0.0-20261002214753-17662f149d15/go.mod h1:gczxCAapENkjd+mX5vpuJx/8+FJNXUVMkjYfmhIem3Y=
+github.com/derekmwright/glyphengine v0.0.0-20261003185155-5a0d940cc8f7 h1:wkT1N1EQfNYX75z/lxCBg0Xx5RV8+hclb2lZ3Hde/Ew=
+github.com/derekmwright/glyphengine v0.0.0-20261003185155-5a0d940cc8f7/go.mod h1:gczxCAapENkjd+mX5vpuJx/8+FJNXUVMkjYfmhIem3Y=
 github.com/go-gl/glfw/v3.3/glfw v0.0.0-20260707082822-2a407d02d01a h1:hSqNjNllNZUIiqXiS7zFJFqqPa4VPqrzMcWws1dz/VE=
 github.com/go-gl/glfw/v3.3/glfw v0.0.0-20260707082822-2a407d02d01a/go.mod h1:SyRD8YfuKk+ZXlDqYiqe1qMSqjNgtHzBTG810KUagMc=
 github.com/go-gl/mathgl v1.2.0 h1:v2eOj/y1B2afDxF6URV1qCYmo1KW08lAMtTbOn3KXCY=

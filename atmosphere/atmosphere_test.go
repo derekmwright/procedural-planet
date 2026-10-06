@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+func TestOceanWaterlineKeepsMillimetreMotion(t *testing.T) {
+	for _, radius := range []float64{500000, 6371000} {
+		const sea = 137.3
+		for _, direction := range [][3]float64{{0, 0, 1}, {0.36, 0.48, 0.8}} {
+			for _, height := range []float64{-0.05, -0.001, 0.001, 0.05, 3.25} {
+				r := radius + sea + height
+				eye := [3]float64{direction[0] * r, direction[1] * r, direction[2] * r}
+				p := FrameParameters(radius, eye, true)
+				p.SetOcean(radius, sea, eye)
+				if math.Abs(float64(p.Detail[0])-height) > 0.000001 {
+					t.Fatalf("waterline lost precision on radius %.0f: height %g became %g", radius, height, p.Detail[0])
+				}
+				if (p.Detail[0] < 0) != (height < 0) {
+					t.Fatal("rounded planet coordinates changed underwater classification")
+				}
+			}
+		}
+	}
+}
+
 func TestMaterialCoordinatesSurviveCameraRebase(t *testing.T) {
 	// Cross positive/negative wrapping boundaries at both small and planetary
 	// coordinates. A fixed surface point must keep the same material location.

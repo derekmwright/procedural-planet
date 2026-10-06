@@ -16,8 +16,8 @@ float airEndpoint(vec2 uv,float depth) {
         if(ground.x>0.0&&ground.x<ground.y) distance=ground.x;
     }
     float sea=planetData.water.x;
-    if(sea>0.0&&length(EYE_PLANET)>=sea) {
-        vec2 water=sphereInterval(EYE_PLANET,direction,sea);
+    if(sea>0.0&&planetData.detail.x>=0.0) {
+        vec2 water=waterInterval(direction);
         if(water.x>0.0&&water.x<water.y&&water.x<distance) {
             distance=water.x;
             surface=true;

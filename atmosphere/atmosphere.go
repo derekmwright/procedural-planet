@@ -40,6 +40,13 @@ func (p Parameters) Bytes() [176]byte {
 	return result
 }
 
+// SetOcean preserves centimetre-scale waterline motion before planet coordinates
+// are rounded to float32 kilometres for the shaders.
+func (p *Parameters) SetOcean(radius, seaLevel float64, eye [3]float64) {
+	p.Water[0] = float32((radius + seaLevel) / 1000)
+	p.Detail[0] = float32(math.Sqrt(eye[0]*eye[0]+eye[1]*eye[1]+eye[2]*eye[2]) - radius - seaLevel)
+}
+
 func FrameParameters(radius float64, eye [3]float64, enabled bool) Parameters {
 	r := radius / 1000
 	h := math.Max(1.4, math.Min(8, r*0.007))

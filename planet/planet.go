@@ -19,6 +19,7 @@ type Planet struct {
 	Seed       uint64
 	Radius     float64
 	Vegetation *VegetationSettings
+	erosion    *erosionField
 }
 
 func mix(x uint64) uint64 {
@@ -49,6 +50,14 @@ func (p Planet) noise(v Vec, salt uint64) float64 {
 
 // Elevation uses physical wavelengths, so changing radius does not scale mountains.
 func (p Planet) Elevation(d Vec) float64 {
+	h := p.baseElevation(d)
+	if p.erosion != nil && p.erosion.seed == p.Seed && p.erosion.radius == p.Radius {
+		h -= p.erosion.cut(d, h)
+	}
+	return h
+}
+
+func (p Planet) baseElevation(d Vec) float64 {
 	x := d.Mul(p.Radius)
 	broad := p.noise(x.Mul(1.0/220000), 1)
 	mask := smooth(math.Max(0, math.Min(1, (p.noise(x.Mul(1.0/110000), 2)+0.25)*1.4)))
@@ -132,6 +141,9 @@ type Mesh struct {
 	Origin   Vec
 	Vertices []Vertex
 	Indices  []uint32
+	// GeometricError estimates lost radial relief at cell-diagonal midpoints.
+	// It is measured before skirts are added, not a certified error bound.
+	GeometricError float64
 }
 
 func (p Planet) BuildPatch(k Patch, segments int) Mesh {

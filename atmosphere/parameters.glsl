@@ -5,7 +5,7 @@ layout(set=1,binding=6,std140) uniform PlanetParameters {
     vec4 rayleigh;  // RGB scattering coefficients
     vec4 mie;       // scattering coefficient, height km, animation seconds, wave cache enabled
     vec4 water;     // sea radius km, materials enabled, eye Z modulo 4096m, water scatter pass
-    vec4 detail;    // reserved, eye X/Y modulo 4096m, reserved
+    vec4 detail;    // signed eye height above sea (m), eye X/Y modulo 4096m, reserved
     vec4 features;  // shadows, sun shafts, shoreline foam, caustic debug
     vec4 rendering; // deferred view atmosphere, forward caustic cache selected, reserved
     vec4 causticOrigin; // camera-relative patch center (m), active

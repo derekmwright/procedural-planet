@@ -22,7 +22,7 @@ vec3 underwaterShafts(vec3 direction,float travel) {
     if(planetData.features.y<0.5) return vec3(0);
     vec3 up=normalize(EYE_PLANET),sun=normalize(pc.sunDir.xyz);
     float day=smoothstep(0.08,0.4,dot(up,sun));
-    float depth=max(planetData.water.x-length(EYE_PLANET),0.0)*1000.0;
+    float depth=max(-planetData.detail.x,0.0);
     if(day<=0.0||depth>80.0) return vec3(0);
     vec3 origin=vec3(planetData.detail.yz,planetData.water.z);
     vec3 waterSun=-refract(-sun,up,1.0/1.333);
@@ -51,21 +51,21 @@ vec3 underwaterShafts(vec3 direction,float travel) {
 }
 float visibleOceanDistance(vec3 direction,float opaqueDistance) {
     float radius=planetData.water.x;
-    if(radius<=0.0||length(EYE_PLANET)<radius) return -1.0;
-    vec2 hit=sphereInterval(EYE_PLANET,direction,radius);
+    if(radius<=0.0||planetData.detail.x<0.0) return -1.0;
+    vec2 hit=waterInterval(direction);
     return hit.x>0.0&&hit.x<hit.y&&hit.x<opaqueDistance?hit.x:-1.0;
 }
 
 vec3 underwaterColor(vec3 color,float travel,vec3 direction) {
     vec3 transmission=exp(-WATER_ABSORPTION*travel*1000.0);
     float day=smoothstep(-0.12,0.25,dot(normalize(EYE_PLANET),normalize(pc.sunDir.xyz)));
-    float depth=max(planetData.water.x-length(EYE_PLANET),0.0)*1000.0;
+    float depth=max(-planetData.detail.x,0.0);
     return color*transmission+vec3(0.006,0.035,0.047)*(0.01+day*exp(-depth*0.025/WATER_CLARITY))*(1.0-transmission)
         +(planetData.water.w>0.5?vec3(0):underwaterShafts(direction,travel));
 }
 
 bool cameraUnderwater() {
-    return planetData.water.x>0.0&&length(EYE_PLANET)<planetData.water.x;
+    return planetData.water.x>0.0&&planetData.detail.x<0.0;
 }
 
 vec3 underwaterWindow(vec3 direction,float distance) {
@@ -131,9 +131,9 @@ float shoreFoamCoverage(vec3 p,float depth,float footprint) {
 vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaqueDistance) {
     float radius=planetData.water.x;
     if(radius<=0.0) return underlying;
-    vec2 interval=sphereInterval(EYE_PLANET,direction,radius);
+    vec2 interval=waterInterval(direction);
     if(interval.x>interval.y||interval.y<=0.0) return underlying;
-    bool submerged=length(EYE_PLANET)<radius;
+    bool submerged=planetData.detail.x<0.0;
     float surfaceDistance=submerged?interval.y:interval.x;
     if(surfaceDistance<=0.0||surfaceDistance>=opaqueDistance) {
         return submerged?underwaterColor(underlying,opaqueDistance,direction):underlying;
@@ -169,7 +169,7 @@ vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaque
     float specPower=2.0/(2.0/320.0+variance);
     float spec=pow(max(dot(normal,halfVector/max(length(halfVector),0.000001)),0.0),specPower)*(specPower/320.0);
     vec3 direct=(ATM_ENABLED?sunlight(position+radial*0.001,sun):vec3(1.0))
-        *localShadow((position-EYE_PLANET)*1000.0,1.0);
+        *localShadow(direction*(surfaceDistance*1000.0),radial);
     vec3 water=mix(bed,skyColor,fresnel)+pc.sunColor.rgb*direct*spec*0.65;
     if(planetData.features.z>0.5) {
         // Convert optical travel to radial bed depth: a grazing view must

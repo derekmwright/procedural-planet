@@ -23,12 +23,16 @@ layout(push_constant) uniform PushConstants {
 #include "ocean.glsl"
 
 void main() {
+    // Derivatives must precede divergent water/material branches. The plane
+    // normal is for shadow reception only; lighting keeps the smooth normal.
+    vec3 plane=cross(dFdx(fragWorldPos),dFdy(fragWorldPos));
+    vec3 receiverNormal=plane/max(length(plane),0.00000001);
     vec3 ray=fragWorldPos*0.001;
     float distance=length(ray);
     vec3 direction=ray/max(distance,0.000001);
     bool submerged=cameraUnderwater();
     if(submerged) {
-        float exitDistance=sphereInterval(EYE_PLANET,direction,planetData.water.x).y;
+        float exitDistance=waterInterval(direction).y;
         if(exitDistance>0.0&&exitDistance<distance) {
             outColor=vec4(underwaterWindow(direction,exitDistance),1.0);
             return;
@@ -51,32 +55,32 @@ void main() {
     vec3 N=normalize(fragWorldNormal);
     surfaceMaterial(base,N);
     vec3 sunDir=normalize(pc.sunDir.xyz);
-    vec3 point=EYE_PLANET+fragShadowPos*0.001;
+    vec3 point=EYE_PLANET+fragWorldPos*0.001;
     vec3 directTransmission=ATM_ENABLED?sunlight(point,sunDir):vec3(1.0);
     float waterDepth=max(planetData.water.x-length(point),0.0)*1000.0;
     // Evaluate nearby depths in camera-relative meters. Subtracting two
     // planet-sized floats per pixel quantizes the projected caustic pattern.
-    if(distance<1.0) {
+    if(distance<1.0&&planetData.water.x>0.0) {
         vec3 radial=normalize(EYE_PLANET);
-        float along=dot(fragShadowPos,radial);
-        float tangent2=max(dot(fragShadowPos,fragShadowPos)-along*along,0.0);
-        waterDepth=max((planetData.water.x-length(EYE_PLANET))*1000.0
+        float along=dot(fragWorldPos,radial);
+        float tangent2=max(dot(fragWorldPos,fragWorldPos)-along*along,0.0);
+        waterDepth=max(-planetData.detail.x
             -along-tangent2/(2.0*length(EYE_PLANET)*1000.0),0.0);
     }
     if(planetData.features.w>0.5&&waterDepth>0.0) {
-        vec3 p=vec3(planetData.detail.yz,planetData.water.z)+fragShadowPos;
+        vec3 p=vec3(planetData.detail.yz,planetData.water.z)+fragWorldPos;
         float focus=waterLightFocus(p,normalize(point),waterDepth);
         outColor=vec4(vec3(focus*0.25),1.0);
         return;
     }
     if(planetData.features.z>0.5&&fragUV.y<0.5&&dot(N,normalize(point))>0.85) {
         vec3 radial=normalize(EYE_PLANET);
-        float along=dot(fragShadowPos,radial);
-        float tangent2=max(dot(fragShadowPos,fragShadowPos)-along*along,0.0);
-        float height=(length(EYE_PLANET)-planetData.water.x)*1000.0
+        float along=dot(fragWorldPos,radial);
+        float tangent2=max(dot(fragWorldPos,fragWorldPos)-along*along,0.0);
+        float height=planetData.detail.x
             +along+tangent2/(2.0*length(EYE_PLANET)*1000.0);
         if(height>-4.0&&height<1.6&&distance<1.0) {
-            vec3 p=vec3(planetData.detail.yz,planetData.water.z)+fragShadowPos;
+            vec3 p=vec3(planetData.detail.yz,planetData.water.z)+fragWorldPos;
             float patchiness=shoreNoise(p,4.0);
             float wash=0.5+0.5*cos(planetData.mie.z*0.8+patchiness*2.0);
             float wet=1.0-smoothstep(-0.25,0.65+wash*0.25,height-(patchiness-0.5)*0.8);
@@ -89,10 +93,10 @@ void main() {
     vec3 lightDir=normalize(mix(sunDir,-refract(-sunDir,normalize(point),1.0/1.333),smoothstep(0.0,0.4,waterDepth)));
     float ndl=max(dot(N,lightDir),0.0);
     vec3 irradiance=pc.sunColor.rgb*directTransmission*ndl
-        *localShadow(fragShadowPos,max(dot(N,sunDir),0.0));
+        *localShadow(fragShadowPos,receiverNormal);
     if(waterDepth>0.0) irradiance*=smoothstep(0.0,0.08,dot(normalize(point),sunDir));
     irradiance*=exp(-WATER_ABSORPTION*waterDepth/max(dot(normalize(point),lightDir),0.1));
-    if(waterDepth>0.0) irradiance*=seabedCaustics(fragShadowPos,point,waterDepth);
+    if(waterDepth>0.0) irradiance*=seabedCaustics(fragWorldPos,point,waterDepth);
     vec3 ambient=pc.ambient.rgb;
     if (ATM_ENABLED) {
         float localDay=smoothstep(-0.12,0.25,dot(normalize(point),sunDir));

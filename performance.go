@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	glyph "github.com/derekmwright/glyphengine"
 	"github.com/derekmwright/glyphengine/renderer"
+	"github.com/derekmwright/procedural-planet/planet"
 	"log"
 	"math"
 	"os"
@@ -16,33 +17,47 @@ import (
 type perfFrame struct {
 	wall, update, terrain, rocks, grass float64
 	gpu                                 renderer.GPUTimings
+	pipeline                            renderer.PipelineStats
+	prepassActive                       bool
+}
+type perfPipelinePass struct {
+	FragmentInvocations, ClippingPrimitives float64
 }
 type perfReport struct {
-	RunID                                                             string `json:"run_id"`
-	ProfileFrameStep                                                  int    `json:"profile_frame_step"`
-	AsyncTerrainUploads                                               bool
-	AirPasses                                                         bool
-	AirPassesActive                                                   bool
-	AirScale                                                          float64
-	CausticCache, WaveCache, WaterPasses, AtmosphereCache, ShoreFoam  bool
-	UploadsSkipped, TerrainUploadsWaiting                             int
-	Event                                                             string `json:"event"`
-	UTC                                                               string `json:"utc"`
-	Frame                                                             int    `json:"frame"`
-	Samples                                                           int    `json:"samples"`
-	GPUValidSamples                                                   int    `json:"gpu_valid_samples"`
-	Width, Height                                                     int
-	VSync                                                             bool
-	FixedSimulation                                                   bool
-	FPS, FrameMS, FrameP95MS, UpdateMS, TerrainMS, RocksMS, GrassMS   float64
-	GPUMS, GPUP95MS                                                   float64
-	GPUPasses                                                         map[string]float64
-	CPUSessionMeans                                                   map[string]float32
-	DrawCalls, Instances, Triangles                                   int
-	Seed                                                              uint64
-	Radius, SeaLevel, GroundClearance, SeaHeight, Longitude, Latitude float64
-	Eye, Forward                                                      [3]float64
-	Ocean, Underwater, Atmosphere, Materials, Grass, Shadows, SunRays bool
+	RunID                                                                string `json:"run_id"`
+	ProfileFrameStep                                                     int    `json:"profile_frame_step"`
+	AsyncTerrainUploads                                                  bool
+	AirPasses                                                            bool
+	AirPassesActive                                                      bool
+	AirScale                                                             float64
+	CausticCache, WaveCache, WaterPasses, AtmosphereCache, ShoreFoam     bool
+	UploadsSkipped, TerrainUploadsWaiting                                int
+	Event                                                                string `json:"event"`
+	UTC                                                                  string `json:"utc"`
+	Frame                                                                int    `json:"frame"`
+	Samples                                                              int    `json:"samples"`
+	GPUValidSamples                                                      int    `json:"gpu_valid_samples"`
+	Width, Height                                                        int
+	VSync                                                                bool
+	FixedSimulation                                                      bool
+	FPS, FrameMS, FrameP95MS, UpdateMS, TerrainMS, RocksMS, GrassMS      float64
+	GPUMS, GPUP95MS                                                      float64
+	GPUPasses                                                            map[string]float64
+	CPUSessionMeans                                                      map[string]float32
+	DrawCalls, Instances, Triangles                                      int
+	AppWork                                                              renderer.AppStats
+	DepthPrepass                                                         string
+	PrepassEstimate, PrepassCovered                                      float32
+	PrepassDraws, PrepassActiveSamples                                   int
+	PipelineStatsEnabled                                                 bool
+	PipelineValidSamples                                                 int
+	PipelinePasses                                                       map[string]perfPipelinePass
+	TerrainLeaves, TerrainLevel, TerrainTriangles, RockCount, GrassCount int
+	Erosion                                                              planet.ErosionStats
+	Seed                                                                 uint64
+	Radius, SeaLevel, GroundClearance, SeaHeight, Longitude, Latitude    float64
+	Eye, Forward                                                         [3]float64
+	Ocean, Underwater, Atmosphere, Materials, Grass, Shadows, SunRays    bool
 }
 type performance struct {
 	runID                            string
@@ -93,7 +108,11 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 		timing := e.GPUTimings()
 		// The renderer reuses the backing array for application timestamps.
 		timing.App = slices.Clone(timing.App)
-		p.frames[p.next] = perfFrame{float64(start.Sub(p.previous)) / float64(time.Millisecond), milliseconds(start), p.terrainMS, p.rocksMS, p.grassMS, timing}
+		var pipeline renderer.PipelineStats
+		if e.Renderer().PipelineStatsSupported() {
+			pipeline, _ = e.PipelineStats()
+		}
+		p.frames[p.next] = perfFrame{wall: float64(start.Sub(p.previous)) / float64(time.Millisecond), update: milliseconds(start), terrain: p.terrainMS, rocks: p.rocksMS, grass: p.grassMS, gpu: timing, pipeline: pipeline, prepassActive: e.Renderer().Stats().PrepassActive}
 		p.next = (p.next + 1) % len(p.frames)
 		p.count = min(p.count+1, len(p.frames))
 	}
@@ -114,6 +133,9 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	var wall, gpu []float64
 	for i := 0; i < p.count; i++ {
 		f := p.frames[i]
+		if f.prepassActive {
+			r.PrepassActiveSamples++
+		}
 		r.FrameMS += f.wall
 		r.UpdateMS += f.update
 		r.TerrainMS += f.terrain
@@ -132,6 +154,7 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 			}
 		}
 	}
+	r.PipelinePasses, r.PipelineValidSamples = meanPipelinePasses(p.frames[:p.count])
 	n := float64(p.count)
 	r.FrameMS /= n
 	r.UpdateMS /= n
@@ -158,6 +181,14 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	}
 	r.Width, r.Height = e.Window().GetFramebufferSize()
 	stats := e.Renderer().Stats()
+	r.DepthPrepass = e.Renderer().Capabilities().DepthPrepass.String()
+	r.PrepassEstimate, r.PrepassCovered, r.PrepassDraws = stats.PrepassEstimate, stats.PrepassCovered, stats.PrepassDraws
+	r.PipelineStatsEnabled = e.Renderer().PipelineStatsSupported()
+	r.AppWork = stats.App
+	r.AppWork.Passes = slices.Clone(stats.App.Passes)
+	r.TerrainLeaves, r.TerrainLevel, r.TerrainTriangles = g.terrain.stats()
+	r.RockCount, r.GrassCount = g.rocks.count, g.grass.count
+	r.Erosion = g.world.ErosionStats()
 	r.AsyncTerrainUploads = g.terrain.asyncUploads
 	r.UploadsSkipped = stats.UploadsSkipped
 	for _, child := range g.terrain.uploaded {
@@ -224,6 +255,14 @@ func (p *performance) draw(e *glyph.Engine) {
 	e.Debugf("CPU update %.2f ms | terrain %.2f | rocks %.2f | grass %.2f", r.UpdateMS, r.TerrainMS, r.RocksMS, r.GrassMS)
 	e.Debugf("CPU engine session avg: record %.2f | GPU wait %.2f | present %.2f ms", r.CPUSessionMeans["record"], r.CPUSessionMeans["gpuwait"], r.CPUSessionMeans["present"])
 	e.Debugf("Submitted %d draws / %d instances / %d triangles | underwater %t", r.DrawCalls, r.Instances, r.Triangles, r.Underwater)
+	e.Debugf("App work: %d draws / %d triangles / %d dispatches", r.AppWork.DrawCalls, r.AppWork.Triangles, r.AppWork.Dispatches)
+	if r.DepthPrepass != "off" {
+		e.Debugf("GPU prepass %.2f ms | %s active %d/%d | bounds overlap %.2f", r.GPUPasses[renderer.PassDepthPrepass.String()], r.DepthPrepass, r.PrepassActiveSamples, r.Samples, r.PrepassEstimate)
+	}
+	if r.PipelineStatsEnabled && r.PipelineValidSamples > 0 {
+		opaque := r.PipelinePasses[renderer.PassOpaque.String()]
+		e.Debugf("GPU opaque: %.2f M fragments / %.2f M clipped primitives (%d samples)", opaque.FragmentInvocations/1e6, opaque.ClippingPrimitives/1e6, r.PipelineValidSamples)
+	}
 	if r.AsyncTerrainUploads {
 		e.Debugf("Terrain GPU uploads: %d waiting | %d draws skipped", r.TerrainUploadsWaiting, r.UploadsSkipped)
 	}
@@ -234,4 +273,37 @@ func (p *performance) draw(e *glyph.Engine) {
 			e.Debugf("Profile: %s (1 Hz, last %d frames)", filepath.Base(p.file.Name()), r.Samples)
 		}
 	}
+}
+
+// Only measured frames and bracketed passes enter the mean. Missing queries
+// must not look like zero work; these counters are not a quad-overshading ratio.
+func meanPipelinePasses(frames []perfFrame) (map[string]perfPipelinePass, int) {
+	var result map[string]perfPipelinePass
+	valid := 0
+	for _, sample := range frames {
+		frame := sample.pipeline
+		if !frame.Valid {
+			continue
+		}
+		if result == nil {
+			result = make(map[string]perfPipelinePass)
+		}
+		valid++
+		for index, fragments := range frame.FragmentInvocations {
+			pass := renderer.Pass(index)
+			if !renderer.StatisticsBracketed(pass) {
+				continue
+			}
+			value := result[pass.String()]
+			value.FragmentInvocations += float64(fragments)
+			value.ClippingPrimitives += float64(frame.ClippingPrimitives[index])
+			result[pass.String()] = value
+		}
+	}
+	for name, value := range result {
+		value.FragmentInvocations /= float64(valid)
+		value.ClippingPrimitives /= float64(valid)
+		result[name] = value
+	}
+	return result, valid
 }

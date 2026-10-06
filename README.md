@@ -37,6 +37,24 @@ For development, `go run .` also works. The executable retains its original
 Shader changes require `glslc` from the Vulkan SDK and `go generate ./atmosphere`.
 Run `go test ./...` and `go vet ./...` to check the Go code.
 
+The adaptive opaque depth prepass is enabled by default. Use
+`-depth-prepass=off` for a baseline or `-depth-prepass=on` to force it during
+profiling. `-pipeline-stats` adds optional GPU fragment/primitive counters to
+the HUD and JSONL profile; leave it off for ordinary timing comparisons.
+
+An experimental stream-power terrain modifier is available with `-erosion`.
+To start above an eroded valley, run:
+
+```powershell
+.\bin\universebuild.exe -erosion-demo -longitude=40
+```
+
+Allow about ten seconds for startup erosion preparation. `-erosion-strength=0..2`
+controls incision (default 1). This adds dry valleys and reshapes their side
+slopes; flowing rivers and caves are not implemented. Erosion is off by default
+while the landforms are evaluated. See [terrain erosion](docs/terrain-erosion.md)
+for the method, measurements and remaining work.
+
 To work against a sibling engine checkout, use an ignored local workspace rather
 than changing the published dependency pin:
 

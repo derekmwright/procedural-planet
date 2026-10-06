@@ -10,11 +10,12 @@ import (
 type stone struct {
 	direction, position, up planet.Vec
 	size, yaw               float64
+	height, support         float64
 	variant                 int
 	shade                   float32
 }
 type rockScatter struct {
-	sets        [3]*renderer.InstanceSet
+	sets        [3]*instanceStream
 	placements  [3][]renderer.MeshInstance
 	stones      []stone
 	anchor      planet.Vec
@@ -71,7 +72,11 @@ func scatterStones(p planet.Planet, center planet.Vec) []stone {
 					if up.Dot(d) < 0.8 {
 						continue
 					}
-					result = append(result, stone{direction: d, up: up, size: size, yaw: yaw, variant: variant, shade: shade})
+					height := p.Elevation(d)
+					// A rock belongs to the immutable surface, not the temporary
+					// collision floor used to keep the camera above coarse triangles.
+					position := d.Mul(p.Radius + height - size*0.08)
+					result = append(result, stone{direction: d, position: position, up: up, height: height, size: size, yaw: yaw, variant: variant, shade: shade})
 				}
 			}
 		}
@@ -142,18 +147,35 @@ func (r *rockScatter) init(e *glyph.Engine) error {
 		if err != nil {
 			return err
 		}
-		set, err := e.Renderer().CreateInstanceSet(mesh, 4096, nil)
+		set, err := newInstanceStream(e.Renderer(), mesh, 4096)
 		if err != nil {
 			return err
 		}
 		r.sets[i] = set
 		id := e.Spawn()
-		e.C.InstancedMesh.Set(id, &glyph.InstancedMesh{Set: set})
+		e.C.InstancedMesh.Set(id, &set.InstancedMesh)
 		e.C.MeshRef.Set(id, &glyph.MeshRef{Mesh: mesh, Roughness: 0.9})
 	}
 	return nil
 }
-func (r *rockScatter) update(e *glyph.Engine, t *terrain, eye planet.Vec, clearance float64) {
+
+// Wait for the visible mesh to support the fixed rock position. Lifting props
+// to terrain.ground makes them hop on every LOD replacement and can pull a
+// submerged rock (and its shadow caster) up through the water surface.
+func (r *rockScatter) updateSupport(t *terrain) {
+	for i := range r.stones {
+		s := &r.stones[i]
+		meshHeight := t.world.MeshElevation(t.lod.At(s.direction), planet.Segments, s.direction)
+		error := math.Abs(meshHeight - s.height)
+		// Small relief can be hidden by the embedded base. Bigger disagreement
+		// must remove the instance from both the color and shadow draws.
+		full, hidden := 0.08+s.size*0.15, 0.18+s.size*0.5
+		f := clamp((error-full)/(hidden-full), 0, 1)
+		s.support = 1 - f*f*(3-2*f)
+	}
+}
+
+func (r *rockScatter) update(e *glyph.Engine, t *terrain, eye planet.Vec, clearance float64) error {
 	for i := range r.placements {
 		r.placements[i] = r.placements[i][:0]
 	}
@@ -169,17 +191,14 @@ func (r *rockScatter) update(e *glyph.Engine, t *terrain, eye planet.Vec, cleara
 		}
 		revision := t.splits + t.merges
 		if changed || revision != r.revision {
-			for i := range r.stones {
-				s := &r.stones[i]
-				s.position = s.direction.Mul(t.world.Radius + t.ground(s.direction) - s.size*0.08)
-			}
+			r.updateSupport(t)
 			r.revision = revision
 		}
 		for _, s := range r.stones {
 			pos := s.position.Sub(eye)
 			distance := math.Sqrt(pos.Dot(pos))
 			fade := clamp((230-distance)/50, 0, 1)
-			scale := s.size * fade
+			scale := s.size * fade * s.support
 			if scale < 0.015 {
 				continue
 			}
@@ -201,6 +220,9 @@ func (r *rockScatter) update(e *glyph.Engine, t *terrain, eye planet.Vec, cleara
 		}
 	}
 	for i, set := range r.sets {
-		e.Renderer().UpdateInstanceSet(set, r.placements[i])
+		if err := set.update(e.Renderer(), r.placements[i]); err != nil {
+			return err
+		}
 	}
+	return nil
 }
