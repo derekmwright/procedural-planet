@@ -20,6 +20,7 @@ func init() { runtime.LockOSThread() }
 type game struct {
 	causticCache                                 *atmosphere.CausticCache
 	causticCacheEnabled                          bool
+	causticTemporal                              bool
 	hud                                          bool
 	airPasses                                    *atmosphere.AirPasses
 	deferredAir                                  bool
@@ -186,6 +187,9 @@ func (g *game) camera(e *glyph.Engine) {
 		}
 	}
 	if g.causticCache != nil {
+		if g.causticTemporal {
+			parameters.Rendering[2] = 1
+		}
 		g.causticCache.Update(&parameters, g.cam.eye, g.world.Radius+g.seaLevel, g.oceanEnabled, (space{}).State().SunDir)
 	}
 	parameters.Mie[2] = float32(math.Mod(g.elapsed, 62.83185307179586))
@@ -380,6 +384,7 @@ func run() error {
 	causticsDebug := flag.Bool("caustics-debug", false, "show unattenuated seabed focusing: neutral light is gray, concentrated light is white")
 	atmosphereCache := flag.Bool("atmosphere-cache", true, "cache spherical sun-path transmission in a GPU lookup table")
 	causticCache := flag.Bool("caustic-cache", true, "forward-project and sum refracted sunlight (false: legacy inverse solver)")
+	causticTemporal := flag.Bool("caustic-temporal", true, "stabilize caustic brightness over time (false: spatial filtering only)")
 	waveTextures := flag.Bool("wave-cache", true, "use GPU-cached broad wave spectrum (false compares previous five-wave field)")
 	asyncTerrainUploads := flag.Bool("async-terrain-uploads", true, "stream terrain into GPU-local buffers (false compares pooled dynamic buffers)")
 	shoreFoam := flag.Bool("shore-foam", true, "enable animated shallow-water foam and wet shoreline sand")
@@ -499,6 +504,7 @@ func run() error {
 	g.atmosphereCache = *atmosphereCache
 	g.waveTextures = *waveTextures
 	g.causticCacheEnabled = *causticCache
+	g.causticTemporal = *causticTemporal
 	g.shoreFoam = *shoreFoam
 	g.deferredAir, g.airScale = *deferredAir, *airScale
 	g.asyncTerrainUploads = *asyncTerrainUploads

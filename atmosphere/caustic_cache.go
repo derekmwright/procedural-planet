@@ -20,6 +20,15 @@ var causticFrag []byte
 //go:embed caustic-filter.frag.spv
 var causticFilter []byte
 
+//go:embed caustic-temporal.frag.spv
+var causticTemporal []byte
+
+//go:embed caustic-history.frag.spv
+var causticHistory []byte
+
+//go:embed caustic-state.frag.spv
+var causticState []byte
+
 //go:embed caustic-resolve.frag.spv
 var causticResolve []byte
 
@@ -35,13 +44,14 @@ const (
 // CausticCache sums forward-refracted surface triangles, including overlapping
 // and reversed folds. Eight receiver depths share one local, world-anchored atlas.
 type CausticCache struct {
-	pass         *renderer.AppPass
-	resolve      *renderer.AppPass
-	blur         *renderer.AppPass
-	filter       *renderer.AppPass
-	anchor, u, v planet.Vec
-	frameOrigin  planet.Vec
-	radius       float64
+	pass            *renderer.AppPass
+	resolve         *renderer.AppPass
+	blur            *renderer.AppPass
+	filter          *renderer.AppPass
+	remember, state *renderer.AppPass
+	anchor, u, v    planet.Vec
+	frameOrigin     planet.Vec
+	radius          float64
 }
 
 func NewCausticCache(r *renderer.Renderer) (*CausticCache, error) {
@@ -73,7 +83,25 @@ func NewCausticCache(r *renderer.Renderer) (*CausticCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	filter, err := r.CreateAppPass(renderer.AppPassDesc{Name: "water focusing filter", Stage: renderer.StageBeforeScene, Target: filtered, Vert: shaders.DepthResolveVertSpv, Frag: causticFilter, Fullscreen: true, Reads: []*renderer.Texture{horizontal.Texture()}, Timed: true})
+	// History textures expose the previous submitted frame. Keep the current
+	// result separate so the scene receives this frame's reconstruction.
+	history, err := r.CreateRenderTarget(renderer.RenderTargetDesc{Name: "water focusing history", Format: renderer.TargetR16F, Width: 2048, Height: 1024, Filter: renderer.FilterNearest, History: true})
+	if err != nil {
+		return nil, err
+	}
+	state, err := r.CreateRenderTarget(renderer.RenderTargetDesc{Name: "water focusing state", Format: renderer.TargetRGBA32F, Width: 4, Height: 1, History: true})
+	if err != nil {
+		return nil, err
+	}
+	filter, err := r.CreateAppPass(renderer.AppPassDesc{Name: "water focusing filter", Stage: renderer.StageBeforeScene, Target: filtered, Vert: shaders.DepthResolveVertSpv, Frag: causticTemporal, Fullscreen: true, Reads: []*renderer.Texture{horizontal.Texture(), history.Texture(), state.Texture()}, Timed: true})
+	if err != nil {
+		return nil, err
+	}
+	remember, err := r.CreateAppPass(renderer.AppPassDesc{Name: "water focusing history", Stage: renderer.StageBeforeScene, Target: history, Vert: shaders.DepthResolveVertSpv, Frag: causticHistory, Fullscreen: true, Reads: []*renderer.Texture{filtered.Texture()}, Timed: true})
+	if err != nil {
+		return nil, err
+	}
+	statePass, err := r.CreateAppPass(renderer.AppPassDesc{Name: "water focusing state", Stage: renderer.StageBeforeScene, Target: state, Vert: shaders.DepthResolveVertSpv, Frag: causticState, Fullscreen: true, Timed: true})
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +146,7 @@ func NewCausticCache(r *renderer.Renderer) (*CausticCache, error) {
 	}
 	// Static meshes are renderer-owned and released by Renderer.Destroy.
 	pass.SetDraws([]renderer.RenderObject{{Mesh: mesh, Model: mgl32.Ident4()}})
-	return &CausticCache{pass: pass, resolve: resolve, blur: blur, filter: filter}, nil
+	return &CausticCache{pass: pass, resolve: resolve, blur: blur, filter: filter, remember: remember, state: statePass}, nil
 }
 
 func (c *CausticCache) Update(p *Parameters, eye planet.Vec, seaRadius float64, enabled bool, sun [3]float32) {
@@ -127,6 +155,8 @@ func (c *CausticCache) Update(p *Parameters, eye planet.Vec, seaRadius float64, 
 	c.resolve.SetEnabled(active)
 	c.blur.SetEnabled(active)
 	c.filter.SetEnabled(active)
+	c.remember.SetEnabled(active && p.Rendering[2] > 0.5)
+	c.state.SetEnabled(active && p.Rendering[2] > 0.5)
 	if !active {
 		return
 	}
@@ -136,6 +166,15 @@ func (c *CausticCache) Update(p *Parameters, eye planet.Vec, seaRadius float64, 
 	}
 	// Fixed 16-byte payload is always valid for an application pass.
 	if err := c.pass.SetPushConstants(data[:]); err != nil {
+		panic(err)
+	}
+	if err := c.state.SetPushConstants(data[:]); err != nil {
+		panic(err)
+	}
+	var filterData [32]byte
+	binary.LittleEndian.PutUint32(filterData[4:], math.Float32bits(1)) // vertical
+	copy(filterData[16:], data[:])
+	if err := c.filter.SetPushConstants(filterData[:]); err != nil {
 		panic(err)
 	}
 }

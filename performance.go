@@ -31,6 +31,7 @@ type perfReport struct {
 	AirPassesActive                                                      bool
 	AirScale                                                             float64
 	CausticCache, WaveCache, WaterPasses, AtmosphereCache, ShoreFoam     bool
+	CausticTemporal                                                      bool
 	UploadsSkipped, TerrainUploadsWaiting                                int
 	Event                                                                string `json:"event"`
 	UTC                                                                  string `json:"utc"`
@@ -209,6 +210,7 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	r.Atmosphere, r.Materials, r.Grass, r.Shadows, r.SunRays = g.atmosphereEnabled, g.materialsEnabled, g.grassEnabled, g.shadowsEnabled, g.sunRaysEnabled
 	r.AirPassesActive = r.AirPasses && r.Atmosphere && !r.Underwater && !g.causticsDebug
 	r.CausticCache = g.causticCacheEnabled
+	r.CausticTemporal = g.causticTemporal
 	r.WaveCache, r.WaterPasses, r.AtmosphereCache, r.ShoreFoam = g.waveTextures, g.waterPasses, g.atmosphereCache, g.shoreFoam
 	p.report = r
 	if p.marker {
@@ -244,7 +246,7 @@ func (p *performance) draw(e *glyph.Engine) {
 		e.Debugf("GPU air: scatter %.2f | transmission %.2f | composite %.2f | present %.2f ms", r.GPUPasses["air scattering"], r.GPUPasses["air transmission"], r.GPUPasses["air composite"], r.GPUPasses["air present"])
 	}
 	if r.GPUPasses["wave field"] > 0 {
-		e.Debugf("GPU wave cache %.2f | focusing %.2f ms", r.GPUPasses["wave field"], r.GPUPasses["water focusing"]+r.GPUPasses["water focusing resolve"]+r.GPUPasses["water focusing blur"]+r.GPUPasses["water focusing filter"])
+		e.Debugf("GPU wave cache %.2f | focusing %.2f ms", r.GPUPasses["wave field"], r.GPUPasses["water focusing"]+r.GPUPasses["water focusing resolve"]+r.GPUPasses["water focusing blur"]+r.GPUPasses["water focusing filter"]+r.GPUPasses["water focusing history"]+r.GPUPasses["water focusing state"])
 	}
 	if r.GPUPasses["sun transmission"] > 0 {
 		e.Debugf("GPU atmosphere table %.2f ms", r.GPUPasses["sun transmission"])

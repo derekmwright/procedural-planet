@@ -29,6 +29,8 @@ SCENES = {
     "orbit": ["-longitude=100", "-latitude=12.6", "-altitude=300000"],
 }
 VARIANTS = {
+    "caustic-spatial": ["-caustic-temporal=false"],
+    "caustic-temporal": ["-caustic-temporal=true"],
     "prepass-off": ["-depth-prepass=off"],
     "prepass-auto": ["-depth-prepass=auto"],
     "prepass-on": ["-depth-prepass=on"],
@@ -137,11 +139,17 @@ def main():
                 # A prepass deliberately resubmits geometry. Check the source
                 # scene instead of demanding equal total submission counts.
                 keys = ["Width", "Height", "Eye", "Forward", "TerrainLeaves", "TerrainLevel", "TerrainTriangles", "RockCount", "GrassCount"]
-                if not any(v.startswith("prepass-") for v in args.variants):
-                    keys += ["DrawCalls", "Instances", "Triangles"]
                 for key in keys:
                     if row[key] != reference[key]:
                         raise RuntimeError(f"Unsettled or mismatched scene {scene}/{variant}: {key}")
+                if not any(v.startswith("prepass-") for v in args.variants):
+                    # Effect variants can deliberately add full-screen draws.
+                    # Keep checking scene submissions after removing app work.
+                    for key in ("DrawCalls", "Instances", "Triangles"):
+                        actual = row[key] - row["AppWork"][key]
+                        expected = reference[key] - reference["AppWork"][key]
+                        if actual != expected:
+                            raise RuntimeError(f"Unsettled or mismatched scene {scene}/{variant}: scene {key}")
             result["comparisons"][f"{scene}/{variant}"] = summarize(rows)
         (output / "summary.json").write_text(json.dumps(result, indent=2) + "\n")
     print(f"Results: {output / 'summary.json'}", flush=True)

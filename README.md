@@ -618,6 +618,9 @@ comparisons, local coverage limits, and remaining overhead-sun limitations.
 The projection now integrates four spatial samples per cache texel and applies
 depth-dependent diffusion. Grid-aligned cache movement reduces highlight jumps
 without changing wave speed or adding screen-space history trails.
+Caustic brightness also uses a short, world-aligned temporal filter to reduce
+flicker as narrow light folds move between samples. `-caustic-temporal=false`
+compares spatial filtering alone. Both paths keep the same wave motion.
 
 Shoreline foam and animated wet sand are enabled by default. Use
 `-shore-foam=false` for an A/B comparison. Foam is a shallow-water surface effect;

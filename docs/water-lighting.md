@@ -1,6 +1,66 @@
 # Wave-driven water lighting
 
-## Current caustic field (2026-10-02)
+## Caustic brightness stability (2026-10-06)
+
+The user still observed rapid intensity pulsing after spatial filtering. Narrow
+projected light folds can gain or lose raster coverage between frames; the
+per-triangle intensity cap and spatial filter do not ensure temporal stability.
+The final vertical filter now also integrates irradiance over time, using a
+50ms exponential response and normalized weights. Wave speeds, amplitudes,
+projection density, and the spatial kernel are unchanged.
+
+History lives in the world-aligned light atlas, not the camera image. Cache
+translations reproject to integer texels, including wrapped world coordinates,
+so stationary light is not blurred repeatedly as the camera moves. A 4x1 GPU
+metadata target records the origin, basis, sun, clock, sea radius, and wave mode
+with each submitted history image. This avoids relying on CPU Update count:
+skipped submissions must not advance the history's coordinates. First use,
+changed basis/light/wave mode, long gaps, and uncovered texels use current light.
+The fixed-size histories survive swapchain resize; newly allocated history
+metadata starts invalid. Both seabed illumination and shafts consume the same
+current reconstructed light field.
+
+The engine's existing `History` targets suffice; no engine change was needed.
+Previous-frame textures are distinct from the current output, and two small
+passes save the result and metadata after filtering. Memory increases by 8MiB
+plus 128 bytes. All six focusing passes are included in the HUD total and JSONL
+timings. `-caustic-temporal=false` bypasses temporal reconstruction and disables
+history writes for an A/B comparison.
+
+This is reconstruction with a small lighting lag, not a higher-resolution photon
+simulation. Moving highlights lose some contrast. Temporal filtering is also
+used to reduce caustic flicker in [NVIDIA's caustics renderer](https://developer.nvidia.com/blog/generating-ray-traced-caustic-effects-in-unreal-engine-4-part-1/);
+this implementation uses our existing projected light field and copies no code.
+
+Validation:
+
+- Four consecutive deterministic frames in each of the existing shallow and
+  overhead views: contrast-normalized RMS second differences fell
+  0.0780 -> 0.0630 (19%) and 0.1887 -> 0.0635 (66%). Mean brightness changed
+  137.895 -> 137.608 and 134.446 -> 134.349; contrast decreased about 3%.
+  These are short numerical comparisons, not proof that all visible jitter is
+  gone. Images and logs: `captures/caustic-stability-pulse-before` and `-after`.
+- The opt-in `TestCausticHistoryGPU` executes the real temporal/copy/state shaders
+  with controlled input. It checks pulsing energy at 30/60/120Hz, initial history,
+  animation-clock wrap, rejection after basis/sun/sea/wave changes, a long pause,
+  resize, skipped acquisition, and positive/negative cache shifts across the
+  world-coordinate seam. Vulkan validation is clean. Run in PowerShell:
+  `$env:PLANET_GPU_TEST='1'; go test ./atmosphere -run TestCausticHistoryGPU -count=1`.
+- RX7900XTX, 3840x2054, VSync off, two runs per variant in alternating order,
+  1201 frames each. The first 720 frames were excluded: the overhead terrain was
+  still settling in the earlier windows. Eight complete 120-frame windows per
+  variant remain; camera, terrain, vegetation and scene submissions match.
+  Median window-mean focusing time: oblique 0.521 -> 0.570ms, overhead
+  0.537 -> 0.578ms. Total GPU time: 2.546 -> 2.589ms and 2.932 -> 3.029ms.
+  These are controlled scene measurements, not predicted timings for every view.
+  Data: `captures/caustic-pulse-perf`, `captures/caustic-pulse-perf-overhead`,
+  and `captures/caustic-pulse-settled.json`.
+
+The profiling tool now subtracts application-pass submissions before comparing
+scene geometry, so deliberate full-screen effect passes do not fail scene-parity
+checks. It still requires equal camera/terrain/vegetation and scene submissions.
+
+## Forward caustic field (2026-10-02)
 
 The longstanding broad dark rosettes were reproduced with a fixed camera at
 longitude20, latitude12.6, sea level150.4257m, ground clearance5m, heading-72,
