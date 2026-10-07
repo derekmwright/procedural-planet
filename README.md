@@ -321,7 +321,8 @@ visual/performance approximation: it suppresses terrain occlusion rather than
 tracing refracted, scattered shadow light. Caustics and underwater shafts remain
 active. The HUD reports effective shadow strength alongside the H setting.
 
-See [water lighting](docs/water-lighting.md) and
+See [terrain shadow filtering](docs/terrain-shadows.md),
+[water lighting](docs/water-lighting.md) and
 [rendering performance](docs/rendering-performance.md) for validation and limits.
 
 

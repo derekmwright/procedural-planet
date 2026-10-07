@@ -43,12 +43,23 @@ float surfaceShadowCascade(int c,vec3 position,vec3 receiverNormal,out float fad
     // Hardware PCF compares four depths using one reference. Cover the
     // remaining half-texel slope inside that footprint, plus a small metre bias.
     float bias=dot(abs(gradient),texel)*0.5+(c==0?0.04:0.5)*depthScale;
+    // A separable [1 2 1] tent, packed into four bilinear comparisons. The old
+    // +/-1 texel taps skipped the centre at texel-aligned UVs, exposing a grid
+    // as receivers crossed coarse mountain-shadow texels. Keep every texel's
+    // weight continuous without increasing fetch count or changing coverage.
+    // Pair adjacent weights: [1-f,2-f] and [1+f,f], each axis sums to four.
+    vec2 grid=p.xy/texel-0.5;
+    vec2 f=fract(grid);
+    vec2 base=(floor(grid)+0.5)*texel;
+    vec2 w0=3.0-2.0*f, w1=1.0+2.0*f;
+    vec2 o0=(2.0-f)/w0-1.0, o1=f/w1+1.0;
     float sum=0.0;
-    for(int y=-1;y<=1;y+=2) for(int x=-1;x<=1;x+=2) {
-        vec2 offset=vec2(x,y)*texel;
-        sum+=textureGrad(terrainShadowMap,vec4(p.xy+offset,float(c),p.z+dot(gradient,offset)-bias),vec2(0),vec2(0));
+    for(int y=0;y<2;y++) for(int x=0;x<2;x++) {
+        vec2 uv=base+vec2(x==0?o0.x:o1.x,y==0?o0.y:o1.y)*texel;
+        float weight=(x==0?w0.x:w1.x)*(y==0?w0.y:w1.y);
+        sum+=weight*textureGrad(terrainShadowMap,vec4(uv,float(c),p.z+dot(gradient,uv-p.xy)-bias),vec2(0),vec2(0));
     }
-    return sum*0.25;
+    return sum*(1.0/16.0);
 }
 #endif
 float localShadow(vec3 position, vec3 receiverNormal) {
