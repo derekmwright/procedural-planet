@@ -29,6 +29,8 @@ SCENES = {
     "orbit": ["-longitude=100", "-latitude=12.6", "-altitude=300000"],
 }
 VARIANTS = {
+    "underwater-shadows": ["-underwater-shadows=true"],
+    "underwater-unshadowed": ["-underwater-shadows=false"],
     "caustic-spatial": ["-caustic-temporal=false"],
     "caustic-temporal": ["-caustic-temporal=true"],
     "prepass-off": ["-depth-prepass=off"],
@@ -136,13 +138,13 @@ def main():
         for variant in args.variants:
             rows = combined[(scene, variant)]
             for row in rows:
-                # A prepass deliberately resubmits geometry. Check the source
-                # scene instead of demanding equal total submission counts.
+                # Prepass and shadow variants deliberately resubmit geometry.
+                # Check the source scene rather than equal total submissions.
                 keys = ["Width", "Height", "Eye", "Forward", "TerrainLeaves", "TerrainLevel", "TerrainTriangles", "RockCount", "GrassCount"]
                 for key in keys:
                     if row[key] != reference[key]:
                         raise RuntimeError(f"Unsettled or mismatched scene {scene}/{variant}: {key}")
-                if not any(v.startswith("prepass-") for v in args.variants):
+                if not any(v.startswith("prepass-") or v in ("underwater-shadows", "underwater-unshadowed") for v in args.variants):
                     # Effect variants can deliberately add full-screen draws.
                     # Keep checking scene submissions after removing app work.
                     for key in ("DrawCalls", "Instances", "Triangles"):

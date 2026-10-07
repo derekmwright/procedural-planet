@@ -1,5 +1,58 @@
 # Wave-driven water lighting
 
+## Underwater cast-shadow mode (2026-10-07)
+
+Cast shadows now fade out as the camera descends through the first two metres
+below sea level. At two metres and deeper, the engine skips directional shadow
+caster draws and the shaders skip shadow-map lookups. The engine still clears
+the maps, so a small residual shadow timing is expected. On resurfacing the same
+smooth depth blend restores shadows without modifying the user's H toggle.
+Ocean-off scenes and above-water views retain the normal shadow behavior.
+
+Use `-underwater-shadows` to retain the previous underwater shadows for comparison.
+This is a visibility/performance choice, not a simulation of diffuse underwater
+shadows: the existing maps project along the air-side sun direction, whereas
+seabed lighting uses a refracted direction. Suppression removes large terrain
+shadows as well as stretched rock shadows, including from above-water geometry
+seen through the surface. A physically complete replacement needs refracted
+visibility and scattering. Caustics, wave focusing, water absorption, normal-based
+surface shading and underwater shafts remain active.
+
+The existing `Features.x` uniform now carries continuous shadow strength (0..1).
+Both surface and atmosphere lookups honor that strength. No new render target,
+pass or sampler is needed. The HUD shows effective strength alongside the H
+setting; JSONL includes `UnderwaterShadows`, `ShadowsActive` and `ShadowStrength`
+so an enabled user setting is not mistaken for submitted shadow work.
+
+Reproduce the comparison with:
+
+```powershell
+python tools/profile_scene.py --scenes seabed-oblique seabed-overhead --variants underwater-shadows underwater-unshadowed --repeats 2 --warmup 720
+```
+
+On the RX 7900 XTX at 3840x2054, two alternating runs per mode (1,201 frames,
+720 warmup, eight complete 120-frame windows per mode) gave these median window
+means. Source camera, terrain and vegetation counts matched; expected shadow
+resubmissions were allowed to differ. Validation and screenshots were disabled
+for timing. Raw results are in `captures/underwater-shadows/perf`.
+
+| Seabed view | GPU with shadows | GPU without shadows | Shadow pass with / without |
+| --- | ---: | ---: | ---: |
+| Oblique sun | 2.639 ms | 2.420 ms | 0.178 / 0.015 ms |
+| Overhead sun | 3.049 ms | 2.746 ms | 0.220 / 0.013 ms |
+
+These views saved about 8-10% of total GPU time. Actual savings depend on visible
+geometry, shadow casters and GPU clocks; these are not universal FPS gains.
+
+Validation: Go tests and vet pass, including depth transitions and user controls.
+The Vulkan shadow receiver regression checks full, fractional, zero and restored
+strength against real cascades. Separate validation-enabled captures at 0.5 m
+above water and 0.5, 1, 2 and 3 m below water confirm the effective strength and
+caster state. A matched low-sun seabed comparison removes the long rock-shadow
+streaks while preserving caustics; camera, terrain and vegetation match between
+modes. All captures are Vulkan-clean and live in
+`captures/underwater-shadows/validation`.
+
 ## Caustic brightness stability (2026-10-06)
 
 The user still observed rapid intensity pulsing after spatial filtering. Narrow

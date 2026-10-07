@@ -308,26 +308,22 @@ but 80 total draws after culling, including non-terrain passes.
 
 ### Local shadows and mountain occlusion
 
-Nearby rock and terrain shadows are enabled by default; **H** or
-`-shadows=false` provides an on/off comparison. The custom lit fragment shader
-samples the engine's two directional cascades, blends their coverage edges,
-and shadows direct surface lighting while retaining ambient fill. Shadow maps
-are enabled below 180 m clearance; their fixed coverage provides no useful
-surface shadowing at orbital altitudes. Parameter slot 5.x in the custom palette
-ABI carries the local-shadow enable bit.
+Rock and terrain cast shadows are enabled by default; **H** or `-shadows=false`
+provides an on/off comparison. The near cascade preserves local detail and fades
+into the mountain cascade by receiver distance. Both retain distant caster reach,
+while atmospheric scattering samples mountain visibility. Shadows turn off at
+12 km ground clearance.
 
-This does **not** fix glow behind distant mountains: the atmosphere still
-checks only the solid planetary sphere for sunlight visibility. The engine
-hardcodes 15/90 m cascade half-extents and does not bind the shadow texture in
-the regular sky pass. These confirmed engine seams are tracked in
-[#97](https://github.com/derekmwright/glyphengine/issues/97) and
-[#98](https://github.com/derekmwright/glyphengine/issues/98). The separate additive
-local-light sky pass has shadow-set access but is not a direct replacement for
-our integrated atmospheric sky. Shader visibility integration remains consumer
-work after coverage and resource access are available.
+Underwater, cast shadows fade out over the first two metres of camera depth, then
+caster draws and shadow lookups stop. Surfacing restores them automatically.
+Use `-underwater-shadows` to retain the previous underwater shadows. This is a
+visual/performance approximation: it suppresses terrain occlusion rather than
+tracing refracted, scattered shadow light. Caustics and underwater shafts remain
+active. The HUD reports effective shadow strength alongside the H setting.
 
-Paired deterministic local-shadow captures are in
-`captures/local-shadows-on.png` and `captures/local-shadows-off.png`.
+See [water lighting](docs/water-lighting.md) and
+[rendering performance](docs/rendering-performance.md) for validation and limits.
+
 
 ### Foreground surface materials
 

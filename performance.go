@@ -59,6 +59,8 @@ type perfReport struct {
 	Radius, SeaLevel, GroundClearance, SeaHeight, Longitude, Latitude    float64
 	Eye, Forward                                                         [3]float64
 	Ocean, Underwater, Atmosphere, Materials, Grass, Shadows, SunRays    bool
+	UnderwaterShadows, ShadowsActive                                     bool
+	ShadowStrength                                                       float32
 }
 type performance struct {
 	runID                            string
@@ -208,6 +210,8 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	r.Eye, r.Forward = [3]float64(g.cam.eye), [3]float64(g.cam.forward)
 	r.Ocean, r.Underwater = g.oceanEnabled, g.oceanEnabled && r.SeaHeight < 0
 	r.Atmosphere, r.Materials, r.Grass, r.Shadows, r.SunRays = g.atmosphereEnabled, g.materialsEnabled, g.grassEnabled, g.shadowsEnabled, g.sunRaysEnabled
+	r.UnderwaterShadows, r.ShadowStrength = g.underwaterShadows, g.shadowStrength()
+	r.ShadowsActive = r.ShadowStrength > 0
 	r.AirPassesActive = r.AirPasses && r.Atmosphere && !r.Underwater && !g.causticsDebug
 	r.CausticCache = g.causticCacheEnabled
 	r.CausticTemporal = g.causticTemporal

@@ -41,6 +41,7 @@ void main() {
     float expected=farValue;
     if(cell<2) expected=nearValue;
     if(cell==2) expected=(nearValue+farValue)*0.5;
+    expected=mix(1.0,expected,planetData.features.x);
     bool bad=abs(actual-expected)>0.015;
     // Green checks that real shadow maps disagree, so the test is sensitive.
     color=vec4(bad?1:0,abs(nearValue-farValue)>0.5?1:0,actual,1);
@@ -57,14 +58,14 @@ void main() {
 		t.Fatal(err)
 	}
 	g := &shadowSelectionProbe{t: t, code: code}
-	e, err := glyph.New(g, glyph.WithTitle("Shadow receiver regression"), glyph.WithWindowSize(128, 32), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithMaxFrames(4))
+	e, err := glyph.New(g, glyph.WithTitle("Shadow receiver regression"), glyph.WithWindowSize(128, 32), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithMaxFrames(6))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer e.Destroy()
 	e.Run()
-	if !g.checked {
-		t.Fatal("shadow selection frame was not checked")
+	if g.checked != 4 {
+		t.Fatalf("checked %d shadow strengths, want 4", g.checked)
 	}
 }
 
@@ -80,7 +81,7 @@ type shadowSelectionProbe struct {
 	t       *testing.T
 	code    []byte
 	frame   int
-	checked bool
+	checked int
 }
 
 func (g *shadowSelectionProbe) Init(e *glyph.Engine) error {
@@ -111,7 +112,7 @@ func (g *shadowSelectionProbe) Init(e *glyph.Engine) error {
 }
 
 func (g *shadowSelectionProbe) Update(e *glyph.Engine, _ float32) {
-	if g.frame == 2 {
+	if g.frame > 0 && g.frame <= 4 {
 		im, err := e.Renderer().CaptureFrame()
 		if err != nil {
 			g.t.Error(err)
@@ -119,14 +120,16 @@ func (g *shadowSelectionProbe) Update(e *glyph.Engine, _ float32) {
 			for cell := 0; cell < 8; cell++ {
 				c := im.RGBAAt(cell*16+8, 16)
 				if c.R > 10 || c.G < 100 {
-					g.t.Errorf("receiver %d: diagnostic pixel %v (red = wrong cascade blend, missing green = insensitive fixture)", cell, c)
+					g.t.Errorf("frame %d, receiver %d: diagnostic pixel %v (red = wrong cascade blend, missing green = insensitive fixture)", g.frame, cell, c)
 				}
 			}
 		}
-		g.checked = true
+		g.checked++
 	}
 	p := Parameters{}
-	p.Features[0] = 1
+	// Check fractional strength on both the near-map early return and far blend,
+	// including a complete fade-out followed by restoration on resurfacing.
+	p.Features[0] = []float32{1, 0.25, 0, 1}[min(g.frame, 3)]
 	data := p.Bytes()
 	if err := e.Renderer().SetShaderParameters(data[:]); err != nil {
 		g.t.Error(err)

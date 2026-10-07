@@ -6,7 +6,7 @@ layout(set=1,binding=6,std140) uniform PlanetParameters {
     vec4 mie;       // scattering coefficient, height km, animation seconds, wave cache enabled
     vec4 water;     // sea radius km, materials enabled, eye Z modulo 4096m, water scatter pass
     vec4 detail;    // signed eye height above sea (m), eye X/Y modulo 4096m, reserved
-    vec4 features;  // shadows, sun shafts, shoreline foam, caustic debug
+    vec4 features;  // cast shadow strength 0..1, sun shafts, shoreline foam, caustic debug
     vec4 rendering; // deferred view atmosphere, forward caustic cache, temporal caustics, reserved
     vec4 causticOrigin; // camera-relative patch center (m), active
     vec4 causticU; // tangent U, span (m)

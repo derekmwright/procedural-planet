@@ -48,6 +48,7 @@ type game struct {
 	atmosphereEnabled                            bool
 	sunRaysEnabled                               bool
 	shadowsEnabled                               bool
+	underwaterShadows                            bool
 	materialsEnabled                             bool
 	oceanEnabled                                 bool
 	seaLevel                                     float64
@@ -196,10 +197,9 @@ func (g *game) camera(e *glyph.Engine) {
 	if !g.materialsEnabled {
 		parameters.Water[1] = 0
 	}
-	shadows := g.shadowsEnabled && g.cam.clearance < 12000
-	if shadows {
-		parameters.Features[0] = 1
-	}
+	shadowStrength := g.shadowStrength()
+	parameters.Features[0] = shadowStrength
+	shadows := shadowStrength > 0
 	// Explicit feature flags shared by every effect.
 	if g.sunRaysEnabled {
 		parameters.Features[1] = 1
@@ -303,7 +303,7 @@ func (g *game) Update(e *glyph.Engine, dt float32) {
 	e.Debugf("%d patches | LOD %d | %d triangles | sim dt %.1f ms", leaves, level, triangles, g.frameMS)
 	e.Debugf("Terrain %.1f ms | last build %.1f ms | GPU meshes %d | splits %d / merges %d", g.terrain.uploadMS, g.terrain.generationMS, g.terrain.allocated, g.terrain.splits, g.terrain.merges)
 	e.Debugf("G: grass %t | %d tufts", g.grassEnabled, g.grass.count)
-	e.Debugf("Foreground rocks: %d | H: local shadows %t | M: materials %t", g.rocks.count, g.shadowsEnabled, g.materialsEnabled)
+	e.Debugf("Foreground rocks: %d | H: shadows %t (%.0f%% active) | M: materials %t", g.rocks.count, g.shadowsEnabled, g.shadowStrength()*100, g.materialsEnabled)
 	if g.cam.flight {
 		e.Debugf("W/S: forward/back | A/D: yaw | Wheel: zoom | Drag: look | Q/E: down/up")
 	} else {
@@ -377,6 +377,7 @@ func run() error {
 	erosionDemo := flag.Bool("erosion-demo", false, "enable erosion and start above a nearby canyon")
 	materials := flag.Bool("materials", true, "enable foreground surface detail (M toggles)")
 	shadows := flag.Bool("shadows", true, "enable mountain, terrain and rock shadows (H toggles)")
+	underwaterShadows := flag.Bool("underwater-shadows", false, "retain cast shadows underwater (default fades them out over the first 2 m)")
 	rays := flag.Bool("sun-rays", true, "enable atmospheric screen-space sun shafts")
 	heading := flag.Float64("heading", 0, "starting flight heading in degrees east of north")
 	pitch := flag.Float64("pitch", -0.08*180/math.Pi, "starting flight pitch in degrees above horizon (-85 to 85)")
@@ -469,6 +470,7 @@ func run() error {
 	g.atmosphereEnabled = *air
 	g.sunRaysEnabled = *rays
 	g.shadowsEnabled = *shadows
+	g.underwaterShadows = *underwaterShadows
 	g.materialsEnabled = *materials
 	g.oceanEnabled = *ocean
 	g.seaLevel = *seaLevel

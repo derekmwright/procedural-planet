@@ -53,7 +53,8 @@ float surfaceShadowCascade(int c,vec3 position,vec3 receiverNormal,out float fad
 #endif
 float localShadow(vec3 position, vec3 receiverNormal) {
 #ifdef TERRAIN_SHADOWS
-    if (planetData.features.x<0.5) return 1.0;
+    float strength=planetData.features.x;
+    if(strength<=0.0) return 1.0;
     // The long light-space depth range includes distant mountain CASTERS.
     // It must not select distant RECEIVERS: otherwise the narrow near-map
     // column stamps a moving square onto hills along the camera's sun ray.
@@ -69,11 +70,11 @@ float localShadow(vec3 position, vec3 receiverNormal) {
         float coverage;
         nearShadow=surfaceShadowCascade(0,position,receiverNormal,coverage);
         nearFade*=coverage;
-        if(nearFade>=1.0) return nearShadow;
+        if(nearFade>=1.0) return mix(1.0,nearShadow,strength);
     }
     float farFade;
     float farShadow=surfaceShadowCascade(1,position,receiverNormal,farFade);
-    return mix(mix(1.0,farShadow,farFade),nearShadow,nearFade);
+    return mix(1.0,mix(mix(1.0,farShadow,farFade),nearShadow,nearFade),strength);
 #else
     return 1.0;
 #endif
@@ -83,14 +84,14 @@ float localShadow(vec3 position, vec3 receiverNormal) {
 // avoid doing eight surface PCF taps for every one of the 16 air samples.
 float airShadow(vec3 position) {
 #ifdef TERRAIN_SHADOWS
-    if (planetData.features.x<0.5) return 1.0;
+    if(planetData.features.x<=0.0) return 1.0;
     vec3 p=(atm.cascadeVP[1]*vec4(position,1.0)).xyz;
     p.xy=p.xy*0.5+0.5;
     if(any(lessThan(p,vec3(0)))||any(greaterThan(p,vec3(1)))) return 1.0;
     float edge=min(min(p.x,1.0-p.x),min(p.y,1.0-p.y));
     float fade=smoothstep(0.01,0.10,edge)*smoothstep(0.0,0.04,min(p.z,1.0-p.z));
     float depthScale=length(vec3(atm.cascadeVP[1][0][2],atm.cascadeVP[1][1][2],atm.cascadeVP[1][2][2]));
-    return mix(1.0,textureGrad(terrainShadowMap,vec4(p.xy,1.0,p.z-2.0*depthScale),vec2(0),vec2(0)),fade);
+    return mix(1.0,textureGrad(terrainShadowMap,vec4(p.xy,1.0,p.z-2.0*depthScale),vec2(0),vec2(0)),fade*planetData.features.x);
 #else
     return 1.0;
 #endif
