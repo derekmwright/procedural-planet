@@ -20,6 +20,20 @@
 // independent of terrain and can still be reused as the camera moves.
 #ifdef TERRAIN_SHADOWS
 float surfaceShadowCascade(int c,vec3 position,vec3 receiverNormal,out float fade) {
+    vec3 rowX=vec3(atm.cascadeVP[c][0][0],atm.cascadeVP[c][1][0],atm.cascadeVP[c][2][0]);
+    vec3 rowZ=vec3(atm.cascadeVP[c][0][2],atm.cascadeVP[c][1][2],atm.cascadeVP[c][2][2]);
+    float depthScale=length(rowZ);
+    vec2 texel=1.0/vec2(textureSize(terrainShadowMap,0).xy);
+    if(c==1) {
+        // A mountain texel spans ~117 m. Extrapolating an individual triangle's
+        // plane across that footprint creates facets and kilometre-scale depth
+        // corrections near tangency. Offset along the unperturbed smooth normal
+        // instead: continuous across triangle edges, bounded to 1.5 map texels,
+        // and zero for a receiver perpendicular to the sunlight.
+        float cosine=clamp(dot(receiverNormal,rowZ/depthScale),-1.0,1.0);
+        float texelWorld=2.0*texel.x/length(rowX);
+        position+=receiverNormal*(1.5*texelWorld*sqrt(max(1.0-cosine*cosine,0.0)));
+    }
     vec3 p=(atm.cascadeVP[c]*vec4(position,1.0)).xyz;
     p.xy=p.xy*0.5+0.5;
     fade=0.0;
@@ -27,22 +41,21 @@ float surfaceShadowCascade(int c,vec3 position,vec3 receiverNormal,out float fad
     float edge=min(min(p.x,1.0-p.x),min(p.y,1.0-p.y));
     fade=smoothstep(0.01,0.10,edge)*smoothstep(0.0,0.04,min(p.z,1.0-p.z));
     if(fade<=0.0) return 1.0;
-    // Fit the comparison depth to the receiving triangle, not its smoothed
-    // lighting normal. A constant reference for all PCF taps makes a steep
-    // slope shadow itself, especially in the 240 km mountain cascade.
-    vec3 rowX=vec3(atm.cascadeVP[c][0][0],atm.cascadeVP[c][1][0],atm.cascadeVP[c][2][0]);
-    vec3 rowY=vec3(atm.cascadeVP[c][0][1],atm.cascadeVP[c][1][1],atm.cascadeVP[c][2][1]);
-    vec3 rowZ=vec3(atm.cascadeVP[c][0][2],atm.cascadeVP[c][1][2],atm.cascadeVP[c][2][2]);
-    float depthScale=length(rowZ);
-    float along=dot(receiverNormal,rowZ/depthScale);
-    float safeAlong=(along<0.0?-1.0:1.0)*max(abs(along),0.05);
-    vec2 gradient=-2.0*depthScale/safeAlong*vec2(
-        dot(receiverNormal,rowX)/dot(rowX,rowX),
-        dot(receiverNormal,rowY)/dot(rowY,rowY));
-    vec2 texel=1.0/vec2(textureSize(terrainShadowMap,0).xy);
-    // Hardware PCF compares four depths using one reference. Cover the
-    // remaining half-texel slope inside that footprint, plus a small metre bias.
-    float bias=dot(abs(gradient),texel)*0.5+(c==0?0.04:0.5)*depthScale;
+    vec2 gradient=vec2(0.0);
+    float bias=(c==0?0.04:0.5)*depthScale;
+    if(c==0) {
+        // Keep the actual receiver plane for the centimetre-scale contact map.
+        // Its footprint is small enough for this local extrapolation. The far
+        // map uses the bounded normal offset above and one reference depth.
+        vec3 rowY=vec3(atm.cascadeVP[c][0][1],atm.cascadeVP[c][1][1],atm.cascadeVP[c][2][1]);
+        float along=dot(receiverNormal,rowZ/depthScale);
+        float safeAlong=(along<0.0?-1.0:1.0)*max(abs(along),0.05);
+        gradient=-2.0*depthScale/safeAlong*vec2(
+            dot(receiverNormal,rowX)/dot(rowX,rowX),
+            dot(receiverNormal,rowY)/dot(rowY,rowY));
+        // Hardware PCF shares one reference across four depths.
+        bias+=dot(abs(gradient),texel)*0.5;
+    }
     // A separable [1 2 1] tent, packed into four bilinear comparisons. The old
     // +/-1 texel taps skipped the centre at texel-aligned UVs, exposing a grid
     // as receivers crossed coarse mountain-shadow texels. Keep every texel's
@@ -62,7 +75,7 @@ float surfaceShadowCascade(int c,vec3 position,vec3 receiverNormal,out float fad
     return sum*(1.0/16.0);
 }
 #endif
-float localShadow(vec3 position, vec3 receiverNormal) {
+float localShadow(vec3 position, vec3 receiverNormal, vec3 smoothNormal) {
 #ifdef TERRAIN_SHADOWS
     float strength=planetData.features.x;
     if(strength<=0.0) return 1.0;
@@ -84,11 +97,16 @@ float localShadow(vec3 position, vec3 receiverNormal) {
         if(nearFade>=1.0) return mix(1.0,nearShadow,strength);
     }
     float farFade;
-    float farShadow=surfaceShadowCascade(1,position,receiverNormal,farFade);
+    float farShadow=surfaceShadowCascade(1,position,smoothNormal,farFade);
     return mix(1.0,mix(mix(1.0,farShadow,farFade),nearShadow,nearFade),strength);
 #else
     return 1.0;
 #endif
+}
+
+// Analytic receivers (water) have the same geometric and smooth normal.
+float localShadow(vec3 position,vec3 normal) {
+    return localShadow(position,normal,normal);
 }
 
 // Haze needs only the mountain cascade and one hardware-filtered comparison;

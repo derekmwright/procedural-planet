@@ -24,7 +24,8 @@ layout(push_constant) uniform PushConstants {
 
 void main() {
     // Derivatives must precede divergent water/material branches. The plane
-    // normal is for shadow reception only; lighting keeps the smooth normal.
+    // normal is for contact shadows only; the coarse mountain cascade needs a
+    // continuous normal, before material detail perturbs the lighting normal.
     vec3 plane=cross(dFdx(fragWorldPos),dFdy(fragWorldPos));
     vec3 receiverNormal=plane/max(length(plane),0.00000001);
     vec3 ray=fragWorldPos*0.001;
@@ -52,7 +53,8 @@ void main() {
     vec4 texel=texture(texSampler,fragUV);
     if (texel.a<0.5) discard;
     vec3 base=fragColor*texel.rgb;
-    vec3 N=normalize(fragWorldNormal);
+    vec3 smoothNormal=normalize(fragWorldNormal);
+    vec3 N=smoothNormal;
     surfaceMaterial(base,N);
     vec3 sunDir=normalize(pc.sunDir.xyz);
     vec3 point=EYE_PLANET+fragWorldPos*0.001;
@@ -93,7 +95,7 @@ void main() {
     vec3 lightDir=normalize(mix(sunDir,-refract(-sunDir,normalize(point),1.0/1.333),smoothstep(0.0,0.4,waterDepth)));
     float ndl=max(dot(N,lightDir),0.0);
     vec3 irradiance=pc.sunColor.rgb*directTransmission*ndl
-        *localShadow(fragShadowPos,receiverNormal);
+        *localShadow(fragShadowPos,receiverNormal,smoothNormal);
     if(waterDepth>0.0) irradiance*=smoothstep(0.0,0.08,dot(normalize(point),sunDir));
     irradiance*=exp(-WATER_ABSORPTION*waterDepth/max(dot(normalize(point),lightDir),0.1));
     if(waterDepth>0.0) irradiance*=seabedCaustics(fragWorldPos,point,waterDepth);
