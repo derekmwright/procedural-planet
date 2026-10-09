@@ -27,6 +27,7 @@ type game struct {
 	airScale                                     float64
 	cloudPasses                                  *atmosphere.CloudPasses
 	cloudsEnabled                                bool
+	cloudShadows                                 bool
 	cloudScale, cloudCoverage                    float64
 	shoreFoam                                    bool
 	asyncTerrainUploads                          bool
@@ -226,6 +227,13 @@ func (g *game) camera(e *glyph.Engine) {
 			parameters.Rendering[0] = 1
 		}
 	}
+	if g.cloudPasses != nil {
+		active := g.cloudsEnabled && g.atmosphereEnabled && g.cloudShadows && g.shadowsEnabled && !g.causticsDebug && g.cloudCoverage > 0
+		if err := g.cloudPasses.Shadows.Update(&parameters, [3]float64(g.cam.eye), (space{}).State().SunDir, g.world.Radius, g.seaLevel, g.elapsed, g.cloudCoverage, active); err != nil {
+			g.lastError = err
+			e.Close()
+		}
+	}
 	data := parameters.Bytes()
 	if err := e.Renderer().SetShaderParameters(data[:]); err != nil {
 		panic(fmt.Sprintf("upload planet shader parameters: %v", err))
@@ -415,6 +423,7 @@ func run() error {
 	clouds := flag.Bool("clouds", true, "enable spherical volumetric clouds (C toggles; requires air-passes)")
 	cloudScale := flag.Float64("cloud-scale", 0.5, "cloud resolution scale: 0.25, 0.5, or 1")
 	cloudCoverage := flag.Float64("cloud-coverage", 0.52, "cloud coverage from 0 (clear) to 1 (overcast)")
+	cloudShadows := flag.Bool("cloud-shadows", true, "cloud shadows on terrain, water and air")
 	flag.Parse()
 	if *cloudScale != 0.25 && *cloudScale != 0.5 && *cloudScale != 1 {
 		return fmt.Errorf("cloud-scale must be 0.25, 0.5, or 1")
@@ -474,6 +483,7 @@ func run() error {
 	}
 	opts := []glyph.Option{glyph.WithTitle("Procedural Planet - Orbit to Surface"), glyph.WithWindowSize(*width, *height), glyph.WithMSAA(4), glyph.WithProjection(60, 0.1, float32(*radius*1000*20)), glyph.WithValidation(*validate), glyph.WithInterpolation(false), glyph.WithVSync(*vsync)}
 	opts = append(opts, glyph.WithShaders(atmosphere.Shaders()))
+	opts = append(opts, glyph.WithShaderTextureSlots(5), glyph.WithAppTimingCapacity(32))
 	opts = append(opts, glyph.WithDepthPrepass(prepassMode))
 	if *pipelineStats {
 		opts = append(opts, glyph.WithPipelineStatistics())
@@ -540,6 +550,7 @@ func run() error {
 	g.shoreFoam = *shoreFoam
 	g.deferredAir, g.airScale = *deferredAir, *airScale
 	g.cloudsEnabled, g.cloudScale, g.cloudCoverage = *clouds, *cloudScale, *cloudCoverage
+	g.cloudShadows = *cloudShadows
 	g.asyncTerrainUploads = *asyncTerrainUploads
 	e, err := glyph.New(g, opts...)
 	if g.terrain != nil {

@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--scale", type=float, default=0.5)
     parser.add_argument("--coverage", type=float, default=0.52)
     parser.add_argument("--off", action="store_true")
+    parser.add_argument("--no-shadows", action="store_true", help="cloud-shadow ablation; keep the visible clouds")
     parser.add_argument("--no-rays", action="store_true", help="disable the extra screen-space shafts in clear-air comparisons")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
@@ -41,6 +42,8 @@ def main():
                    f"-screenshot={args.output / (name + '.png')}", *SCENES[name]]
         if args.no_rays:
             command.append("-sun-rays=false")
+        if args.no_shadows:
+            command.append("-cloud-shadows=false")
         log_path = args.output / (name + ".log")
         print(f"Capturing {name}", flush=True)
         with log_path.open("w") as log:

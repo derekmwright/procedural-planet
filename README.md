@@ -22,8 +22,9 @@ Later sections of this README include historical implementation notes.
 
 The first [volumetric cloud layer](docs/clouds.md) is enabled by default. **C**
 switches between clouds and clear air. It follows the planet's curvature and can
-be viewed from below, inside, or from orbit. Cloud shadows on terrain and water,
-and cloud reflections, are not implemented yet.
+be viewed from below, inside, or from orbit. Moving cloud shadows attenuate
+sunlight on terrain, water and atmospheric haze. Use `-cloud-shadows=false` to
+compare the lighting or save GPU time. Cloud reflections remain future work.
 
 ## Run
 

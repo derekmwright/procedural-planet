@@ -2,7 +2,7 @@
 
 ## Engine update and adaptive depth prepass (2026-10-04)
 
-The application now pins engine `5a0d940` and defaults to
+This update pinned engine `5a0d940` and defaulted to
 `-depth-prepass=auto`. Engine #181 adds a bounds-based estimate and hysteresis
 to decide whether to render opaque depth before the expensive surface shaders.
 `-depth-prepass=off` retains the baseline; `on` forces the extra pass for tests.
@@ -210,15 +210,67 @@ checks. A shorter draft run was discarded because terrain had not settled.
 The profiling script defaults non-cloud variants to `-clouds=false` so existing
 effect comparisons retain their clear-air baseline.
 
-Next work: shared cloud sunlight transmission on terrain and ocean, cloud
-reflections, richer density shaping, then temporal reconstruction with explicit
+Cast cloud shadows were added in the following pass. Remaining work includes
+cloud reflections, richer density shaping, then temporal reconstruction with explicit
 camera-rebase/wind, water-crossing, resize and disocclusion handling. Far terrain
 shadow coverage remains finite; there is no planet-wide terrain ray tracing.
 
-### Engine readiness, 2026-10-09
+## Cloud shadows, 2026-10-09
+
+Clouds now attenuate direct sunlight on terrain, ocean, seabed caustics and air.
+A 2 MiB, 512×512 optical-depth atlas provides local and global projections with
+four cumulative depth knots per shell lobe. The producer shares the visible
+cloud density and wind clock. It remains active underwater, independently of
+the hard terrain-shadow fade. See [cloud integration](clouds.md#cloud-shadows).
+
+RX 7900 XTX, 3840×2054, MSAA 4, fixed 60 Hz simulation, synchronous terrain,
+VSync/HUD/validation/pipeline statistics off. Both variants request visible
+half-resolution clouds; only `-cloud-shadows` changes. Extra sun shafts are off
+in both, including the underwater scattering pass controlled by that toggle.
+There are two runs per variant in alternating order, 1,201 frames per run,
+720 warmup frames and four complete 120-frame windows per run. The table uses
+medians of eight window means. Camera, source geometry and submissions match.
+
+| View | Shadows off GPU ms | Shadows on GPU ms | Added GPU ms |
+| --- | ---: | ---: | ---: |
+| Ground | 4.220 | 5.086 | 0.866 |
+| Shallow shoreline | 7.368 | 8.764 | 1.395 |
+| Orbital terminator | 4.701 | 5.738 | 1.037 |
+| Underwater seabed | 2.081 | 2.479 | 0.398 |
+
+The atlas producer itself costs 0.19–0.36 ms in these views. Consumer lookups in
+surface lighting and atmospheric integration account for the rest of the added
+work. These totals measure the full frame difference, not merely the dispatch.
+They do not bound cost in other views or with extra underwater shafts enabled.
+Clouds retain the same volume resolution and march settings in both variants.
+
+```powershell
+python tools/profile_scene.py --scenes ground coast orbit underwater --variants clouds-shadow-off clouds-half --repeats 2 --warmup 720 --frames 1201 --screenshots --output captures/cloud-shadows/perf
+```
+
+Local evidence is in `captures/cloud-shadows/perf/summary.json`, with executable
+hashes, complete timing windows and scene parity checks. Matched on/off captures
+at 1280×720 cover ground, coast, above-layer, orbit and underwater views; Vulkan
+validation was clean. An additional outward-ray early exit was tested separately
+in `perf-final` but omitted because its small gains were inconsistent across
+views. The table above measures the retained shader path.
+
+Engine [PR #193](https://github.com/derekmwright/glyphengine/pull/193) supplies
+the fifth shared sampler and configurable application timer capacity. The
+application pins its published commit `830e66491cab`, requests five sampler
+slots and 32 timer slots, and registers seventeen timed passes. GPU fixtures
+exercise analytic cloud optical depth, mode toggles, resize and field updates.
+The engine's separate GPU fixture exercises five distinct samplers, eighteen
+mixed graphics/compute timers, same-frame field updates, target replacement and
+destruction, including synchronization validation and a failing-value control.
+Application package tests, vet, shader regeneration, the cloud GPU suite with
+synchronization validation, and the canonical build pass against that published
+module pin without a local engine workspace.
+
+### Engine readiness for the first layer, 2026-10-09
 
 There is no engine prerequisite blocking an initial cloud implementation.
-The pinned engine `5a0d940cc8f7` remains current main and already supplies
+The first layer's engine pin `5a0d940cc8f7` already supplies
 reduced-resolution floating-point targets, scene color/depth, application
 graphics/compute passes, pass-private uniforms, history targets, shadow access,
 and GPU timers. History storage is available; cloud motion reprojection and

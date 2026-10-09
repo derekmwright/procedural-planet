@@ -47,7 +47,10 @@ vec3 underwaterShafts(vec3 direction,float travel) {
     float cosine=dot(direction,waterSun);
     float g=0.65;
     float phase=(1.0-g*g)/pow(1.0+g*g-2.0*g*cosine,1.5);
-    return pc.sunColor.rgb*vec3(0.0002,0.0006,0.0008)*day*phase*sum*(span/float(samples));
+    // These paths span at most 60 m; cloud shadows vary over kilometres.
+    // One midpoint lookup attenuates the broad incoming beam and its caustics.
+    float cloudLight=cloudSunVisibility(EYE_PLANET+direction*(span*0.0005));
+    return pc.sunColor.rgb*vec3(0.0002,0.0006,0.0008)*day*phase*sum*(span/float(samples))*cloudLight;
 }
 float visibleOceanDistance(vec3 direction,float opaqueDistance) {
     float radius=planetData.water.x;
@@ -169,7 +172,7 @@ vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaque
     float specPower=2.0/(2.0/320.0+variance);
     float spec=pow(max(dot(normal,halfVector/max(length(halfVector),0.000001)),0.0),specPower)*(specPower/320.0);
     vec3 direct=(ATM_ENABLED?sunlight(position+radial*0.001,sun):vec3(1.0))
-        *localShadow(direction*(surfaceDistance*1000.0),radial);
+        *localShadow(direction*(surfaceDistance*1000.0),radial)*cloudSunVisibility(position);
     vec3 water=mix(bed,skyColor,fresnel)+pc.sunColor.rgb*direct*spec*0.65;
     if(planetData.features.z>0.5) {
         // Convert optical travel to radial bed depth: a grazing view must

@@ -59,6 +59,7 @@ void main() {
     vec3 sunDir=normalize(pc.sunDir.xyz);
     vec3 point=EYE_PLANET+fragWorldPos*0.001;
     vec3 directTransmission=ATM_ENABLED?sunlight(point,sunDir):vec3(1.0);
+    directTransmission*=cloudSunVisibility(point);
     float waterDepth=max(planetData.water.x-length(point),0.0)*1000.0;
     // Evaluate nearby depths in camera-relative meters. Subtracting two
     // planet-sized floats per pixel quantizes the projected caustic pattern.

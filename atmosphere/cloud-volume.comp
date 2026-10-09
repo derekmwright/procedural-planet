@@ -51,7 +51,7 @@ void marchCloud(inout Air result,vec3 dir,vec3 sun,vec2 interval,float cone) {
         vec3 sigmaA=BETA_R*airDensity.x+vec3(BETA_M*airDensity.y);
         vec3 incident=sunlight(p,sun)*pc.sunColor.rgb*SUN_ENERGY;
         float terrainVisibility=airShadow((p-EYE_PLANET)*1000.0);
-        vec3 source=(BETA_R*airDensity.x*phaseR+vec3(BETA_M*airDensity.y*phaseM))*incident*terrainVisibility;
+        vec3 source=(BETA_R*airDensity.x*phaseR+vec3(BETA_M*airDensity.y*phaseM))*incident*terrainVisibility*cloudSunVisibility(p);
         if(density>0.001) {
             float tau=cloudSunDepth(p,sun);
             // Bounded multiple-scattering approximation; attenuate and broaden

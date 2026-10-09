@@ -211,6 +211,18 @@ vec3 sunlight(vec3 point,vec3 sunDir) {
     return sunlightDirect(point,sunDir);
 }
 
+// Separate from sunlight(): the atmospheric LUT and cloud self-lighting must
+// not apply the cached cloud extinction twice.
+#ifndef BUILD_CLOUD_SHADOW
+layout(set=1,binding=11) uniform sampler2D cloudShadowTexture;
+#include "cloud-shadow-sample.glsl"
+float cloudSunVisibility(vec3 point) {
+    return exp(-cloudShadowDepth(cloudShadowTexture,point));
+}
+#else
+float cloudSunVisibility(vec3 point) { return 1.0; }
+#endif
+
 // Static stratified jitter decorrelates shadow boundaries between pixels.
 // Fixed midpoint samples otherwise align into visible bands across the sky.
 // No frame-time seed: a stationary camera must not shimmer.
@@ -261,7 +273,7 @@ Air integrateAir(vec3 origin, vec3 dir, float maxDistance, vec3 sunDir, vec3 sun
             visibility+=airShadow((origin-EYE_PLANET+dir*t)*1000.0);
         }
         vec3 attenuation=extinction(opticalDepth+segment*0.5)*sunlight(point,sunDir)
-            *(visibility/float(shadowSamples));
+            *(visibility/float(shadowSamples))*cloudSunVisibility(point);
         result.light += attenuation * (BETA_R*density.x*phaseR+vec3(BETA_M*density.y*phaseM)) * stepLength;
         opticalDepth+=segment;
     }

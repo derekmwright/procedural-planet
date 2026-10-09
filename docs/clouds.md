@@ -2,8 +2,9 @@
 
 Clouds are enabled by default. **C** toggles clouds and clear air; **F** disables
 both atmosphere and clouds. The field is seeded with the planet, follows its
-curvature, and supports cameras below, inside, or above the layer. This first
-version prioritizes correct composition and a measurable GPU budget.
+curvature, and supports cameras below, inside, or above the layer. Moving cloud
+shadows share this density field and wind clock, dimming direct sunlight on
+terrain, water and atmospheric haze.
 
 ![Cloud layer viewed from above](images/clouds.png)
 
@@ -18,6 +19,8 @@ version prioritizes correct composition and a measurable GPU budget.
 .\bin\universebuild.exe -cloud-coverage=0.7
 # Clear-air reference
 .\bin\universebuild.exe -clouds=false
+# Keep visible clouds but disable their cast shadows
+.\bin\universebuild.exe -cloud-shadows=false
 ```
 
 `-cloud-scale` accepts 0.25, 0.5 (default), or 1. Coverage defaults to 0.52.
@@ -30,6 +33,11 @@ The earlier screen-space sun shafts do not run in cloud mode: they execute
 before cloud composition and have no cloud visibility. Physical view scattering
 uses the existing terrain-shadow visibility and cloud extinction. **R** still
 controls the extra clear-air screen-space effect and underwater shafts.
+
+Cloud shadows are enabled by default. **H** disables them together with terrain
+shadows; **C** or **F** also disables them. Broad cloud shading stays active
+underwater even though hard local shadows and the visible cloud pass normally
+turn off there. This keeps sunlight consistent when crossing the waterline.
 
 ## Integration
 
@@ -65,22 +73,56 @@ Cloud and clear-air modes share the full-resolution output and presentation
 pass. At 3840×2054, the default cloud targets add about 30.1 MiB plus a 1.46 MiB
 noise atlas. Resources remain allocated while C switches modes.
 
+## Cloud shadows
+
+A compute pass builds a sun-aligned optical-depth field before scene lighting.
+The 512×512 RGBA16F atlas uses 2 MiB and contains four 256×256 tiles: a local
+128 km projection and a whole-planet projection, each with separate near and
+far shell lobes. Each tile stores cumulative optical depth at four heights along
+its lobe. Receivers interpolate those depths and apply Beer–Lambert transmission.
+Mountains above a cloud remain sunlit; receivers inside it receive partial
+attenuation. The empty interior between shell lobes contributes no extinction.
+
+The local projection snaps to complete 500 m texels and blends into the global
+projection before its edge. Coordinates are planet-relative, independent of
+render-origin rebasing. Bilinear samples stay inside their atlas tile; the
+density integral also filters the noise to the sample footprint. Coverage,
+layer heights and wind parameters are identical to those of the visible clouds.
+
+Terrain, ocean glints, foam, seabed sunlight and caustics receive this visibility.
+Air scattering samples it along the view ray; underwater shafts use one sample
+along their short integration path. Ambient lighting remains unchanged. The
+visible clouds retain their existing sunlight march for self-shadowing, avoiding
+applying the cached extinction twice to cloud lighting.
+
+![Cloud shadows falling across the landscape](images/cloud-shadows.png)
+
 ## Performance and validation
 
-The HUD/JSONL report `cloud volume`, `cloud composite` and shared `air present`
-GPU times, plus the requested/active cloud mode, coverage and scale. On the
+The HUD/JSONL report `cloud volume`, `cloud composite`, `cloud shadows` and shared
+`air present` GPU times, plus requested/active cloud and cloud-shadow modes,
+coverage and scale. Before cast shadows were added, on the
 RX 7900 XTX at 3840×2054, matched half-resolution comparisons added about
 1.12 ms on land, 1.29 ms at the coast and 3.24 ms in an orbital terminator view.
 See [rendering performance](rendering-performance.md#first-cloud-layer-2026-10-09)
 for the complete method, totals and quarter-resolution results.
+
+With clouds already visible, adding cast shadows costs about **0.40–1.40 ms**
+in four fixed views at 3840×2054 on that GPU. This includes the producer and all
+consumer lookups, not just the atlas dispatch. See the
+[cloud-shadow comparison](rendering-performance.md#cloud-shadows-2026-10-09)
+for matched totals and reproduction settings. These are fixed-view measurements,
+not a maximum cost across the world.
 
 ```powershell
 go generate ./atmosphere
 go test ./...
 go vet ./...
 $env:PLANET_GPU_TEST = '1'
+$env:GLYPHENGINE_SYNC_VALIDATION = '1'
 go test ./atmosphere -run '^TestCloud' -count=1
 Remove-Item Env:PLANET_GPU_TEST
+Remove-Item Env:GLYPHENGINE_SYNC_VALIDATION
 go build -o bin/universebuild.exe .
 python tools/capture_clouds.py --scenes ground coast inside above orbit night --output captures/cloud-check
 ```
@@ -89,18 +131,25 @@ GPU regression checks exercise the actual atlas sampler across periodic seams
 and all seven mip levels, spherical entry/exit and terrain clipping, mode
 toggles, target recreation, and a dispatch smaller than the live target.
 Cloud restoration matches a frozen reference within one 8-bit channel level.
+The shadow GPU fixture runs the production integrator with constant density and
+checks its result against analytic path lengths, including inside/above-cloud
+receivers, both lobes, atlas edges and disabled shadows. Lifecycle checks update
+the shadow producer while switching modes and resizing targets.
 Validation captures cover day/night, coastal water and inside/above-layer views.
 The 3,600-frame descent/ascent tour passed Vulkan validation and confirmed
 clouds disable underwater and restore above water. A fixed underwater comparison
-with clouds requested on/off was pixel-identical. At zero cloud coverage, the
+with clouds requested on/off was pixel-identical before cast shadows were added.
+At zero cloud coverage, the
 ground comparison against clear air differed by 0.134/255 mean RGB (99th
 percentile 1/255); sparse silhouette differences remain from reconstruction.
 
 ## Current limits and next work
 
-- Cloud shadowing currently affects the cloud's own lighting. It does not yet
-  attenuate sunlight on terrain, ocean, or the separate clear-air segments.
-  Mountains can shade clouds within the existing shadow-map coverage.
+- Cached cast shadows resolve broad formations: 500 m local texels and four
+  optical-depth knots per lobe smooth small features and vertical density changes.
+  The global projection is coarser still. These are filtered approximations,
+  not per-receiver cloud ray tracing. Mountains can shade clouds within the
+  existing terrain shadow-map coverage.
 - Ocean reflections and the refracted sky seen from underwater remain clear-air
   views. The cloud view pass is disabled underwater to preserve water composition.
 - The single fixed layer has fairly soft, broad formations. Sun-facing edges can
@@ -113,11 +162,13 @@ percentile 1/255); sparse silhouette differences remain from reconstruction.
   depth/visibility, water crossings and resize. History allocation alone is
   insufficient; retain this non-temporal path as a reference.
 
-Engine requests: [#190](https://github.com/derekmwright/glyphengine/issues/190)
-for native sampled 3D textures, [#191](https://github.com/derekmwright/glyphengine/issues/191)
-for shared cloud-shadow resources, and [#192](https://github.com/derekmwright/glyphengine/issues/192)
-for more named GPU timers. None blocks this first layer. We currently fill all
-sixteen registered application timing slots.
+The engine dependency pins the published commit from
+[PR #193](https://github.com/derekmwright/glyphengine/pull/193), adding opt-in shared
+sampler and named GPU timer capacities for requests #191 and #192. The showcase
+requests five shared sampler slots and a capacity of 32 application timers;
+seventeen are registered. The cloud-shadow field occupies slot 4 (binding 11).
+[Request #190](https://github.com/derekmwright/glyphengine/issues/190) for native
+sampled 3D textures remains separate; the existing noise atlas needs no such API.
 
 Method references include Guerrilla's
 [The Real-Time Volumetric Cloudscapes of Horizon Zero Dawn](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)

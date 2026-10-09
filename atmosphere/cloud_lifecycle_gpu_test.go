@@ -20,7 +20,7 @@ func TestCloudLifecycleGPU(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	g := &cloudLifecycleProbe{t: t}
-	e, err := glyph.New(g, glyph.WithTitle("Cloud lifecycle regression"), glyph.WithWindowSize(160, 90), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithShaders(Shaders()), glyph.WithMaxFrames(80))
+	e, err := glyph.New(g, glyph.WithTitle("Cloud lifecycle regression"), glyph.WithWindowSize(160, 90), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithShaders(Shaders()), glyph.WithShaderTextureSlots(5), glyph.WithMaxFrames(80))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +100,9 @@ func (g *cloudLifecycleProbe) Update(e *glyph.Engine, _ float32) {
 	}
 	if clouds {
 		p.Rendering[3] = 1
+	}
+	if err := g.passes.Clouds.Shadows.Update(&p, [3]float64{0, 0, 501000}, (cloudTestEnvironment{}).State().SunDir, 500000, 0, 0, 1, clouds); err != nil {
+		g.t.Fatal(err)
 	}
 	data := p.Bytes()
 	if err := e.Renderer().SetShaderParameters(data[:]); err != nil {

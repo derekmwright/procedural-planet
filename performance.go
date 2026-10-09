@@ -31,6 +31,7 @@ type perfReport struct {
 	AirPassesActive                                                      bool
 	AirScale                                                             float64
 	Clouds, CloudsActive                                                 bool
+	CloudShadows, CloudShadowsActive                                     bool
 	CloudScale, CloudCoverage                                            float64
 	CausticCache, WaveCache, WaterPasses, AtmosphereCache, ShoreFoam     bool
 	CausticTemporal                                                      bool
@@ -216,6 +217,8 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	r.ShadowsActive = r.ShadowStrength > 0
 	r.AirPassesActive = r.AirPasses && r.Atmosphere && !r.Underwater && !g.causticsDebug
 	r.Clouds, r.CloudsActive = g.cloudsEnabled, r.AirPassesActive && g.cloudsEnabled
+	r.CloudShadows = g.cloudShadows
+	r.CloudShadowsActive = g.cloudPasses != nil && g.cloudShadows && g.cloudsEnabled && g.atmosphereEnabled && g.shadowsEnabled && !g.causticsDebug && g.cloudCoverage > 0
 	r.CloudScale, r.CloudCoverage = g.cloudScale, g.cloudCoverage
 	r.AirPassesActive = r.AirPassesActive && !r.CloudsActive
 	r.CausticCache = g.causticCacheEnabled
@@ -256,6 +259,9 @@ func (p *performance) draw(e *glyph.Engine) {
 	}
 	if r.CloudsActive {
 		e.Debugf("GPU clouds + air: volume %.2f | composite %.2f | present %.2f ms", r.GPUPasses["cloud volume"], r.GPUPasses["cloud composite"], r.GPUPasses["air present"])
+	}
+	if r.CloudShadowsActive {
+		e.Debugf("GPU cloud shadows %.2f ms", r.GPUPasses["cloud shadows"])
 	}
 	if r.GPUPasses["wave field"] > 0 {
 		e.Debugf("GPU wave cache %.2f | focusing %.2f ms", r.GPUPasses["wave field"], r.GPUPasses["water focusing"]+r.GPUPasses["water focusing resolve"]+r.GPUPasses["water focusing blur"]+r.GPUPasses["water focusing filter"]+r.GPUPasses["water focusing history"]+r.GPUPasses["water focusing state"])
