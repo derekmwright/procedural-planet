@@ -187,6 +187,36 @@ That ordering needs an explicit decision when clouds join the pipeline. Far
 terrain shadow coverage/resolution remains finite; this refactor does not add
 planet-wide terrain ray tracing.
 
+### Engine readiness, 2026-10-09
+
+There is no engine prerequisite blocking an initial cloud implementation.
+The pinned engine `5a0d940cc8f7` remains current main and already supplies
+reduced-resolution floating-point targets, scene color/depth, application
+graphics/compute passes, pass-private uniforms, history targets, shadow access,
+and GPU timers. History storage is available; cloud motion reprojection and
+disocclusion handling still need application implementation.
+
+The engine's `x/sky/clouds.frag` is a useful reference, but its upward-facing,
+flat-height layers cannot be enabled unchanged for a spherical planet with
+orbital and inside-cloud views. The first milestone should use a spherical
+cloud shell with terrain/ocean depth clipping and depth-ordered air composition,
+plus separate GPU timing and a non-temporal reference mode.
+
+Two engine improvements are filed, neither blocking that first milestone:
+
+- [#190](https://github.com/derekmwright/glyphengine/issues/190): sampled 3D
+  textures for cached noise and volume mip filtering. The current fallback is
+  procedural density or a 2D slice atlas; its cost must be measured.
+- [#191](https://github.com/derekmwright/glyphengine/issues/191): additional
+  scene-wide texture bindings for cloud shadows on terrain/ocean. The current
+  four bindings carry the sun table, two wave fields, and caustics. Cloud rendering
+  can begin with pass-local inputs while this shared-lighting interface improves.
+
+The existing intermediate-cascade request #189 improves terrain-shadow detail,
+and #187 adds application-pass pipeline counters. Neither is a cloud blocker;
+existing per-pass GPU timers are sufficient to begin profiling. No cloud GPU
+budget or visual quality has been validated yet.
+
 ## Measured results, 2026-10-02
 
 AMD Radeon RX 7900 XTX, 3840x2054, shadows on, engine b099462. Two runs per
