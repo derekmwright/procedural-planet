@@ -29,6 +29,10 @@ SCENES = {
     "orbit": ["-longitude=100", "-latitude=12.6", "-altitude=300000"],
 }
 VARIANTS = {
+    "clouds-off": ["-clouds=false", "-sun-rays=false"],
+    "clouds-half": ["-clouds=true", "-cloud-scale=0.5", "-sun-rays=false"],
+    "clouds-quarter": ["-clouds=true", "-cloud-scale=0.25", "-sun-rays=false"],
+    "clouds-full": ["-clouds=true", "-cloud-scale=1", "-sun-rays=false"],
     "underwater-shadows": ["-underwater-shadows=true"],
     "underwater-unshadowed": ["-underwater-shadows=false"],
     "caustic-spatial": ["-caustic-temporal=false"],
@@ -38,9 +42,9 @@ VARIANTS = {
     "prepass-on": ["-depth-prepass=on"],
     "caustic-forward": ["-caustic-cache=true"],
     "caustic-legacy": ["-caustic-cache=false"],
-    "half": ["-air-passes=true", "-air-scale=0.5"],
-    "inline": ["-air-passes=false"],
-    "full": ["-air-passes=true", "-air-scale=1"],
+    "half": ["-air-passes=true", "-air-scale=0.5", "-clouds=false"],
+    "inline": ["-air-passes=false", "-clouds=false"],
+    "full": ["-air-passes=true", "-air-scale=1", "-clouds=false"],
 }
 
 
@@ -66,6 +70,7 @@ def summarize(rows):
         "median_window_frame_ms": statistics.median(r["FrameMS"] for r in rows),
         "gpu_pass_ms": {k: statistics.median(r["GPUPasses"].get(k, 0) for r in rows) for k in passes},
         "air_active": sorted({r["AirPassesActive"] for r in rows}),
+        "clouds_active": sorted({r.get("CloudsActive", False) for r in rows}),
         "prepass_active_share": sum(r.get("PrepassActiveSamples", 0) for r in rows) / sum(r["samples"] for r in rows),
         "median_prepass_estimate": statistics.median(r.get("PrepassEstimate", 0) for r in rows),
         "pipeline_valid_samples": sum(r.get("PipelineValidSamples", 0) for r in rows),
@@ -95,7 +100,7 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ, GLYPHENGINE_BACKGROUND="1")
     common = [str(exe), f"-width={args.width}", f"-height={args.height}", f"-frames={args.frames}",
-              "-sync-terrain", "-vsync=false", "-profile-frame-step=120", "-hud=false"]
+              "-sync-terrain", "-vsync=false", "-profile-frame-step=120", "-hud=false", "-clouds=false"]
     if args.validate:
         common.append("-validate")
     if args.pipeline_stats:

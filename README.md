@@ -3,7 +3,8 @@
 A procedural planet showcase built with [GlyphEngine](https://github.com/derekmwright/glyphengine).
 Fly from orbit through the atmosphere to mountains, sandy shores and underwater
 terrain, then back into space. A seeded 500 km radius world uses adaptive terrain,
-camera-relative rendering, terrain shadows, grass, rocks and wave-driven water lighting.
+camera-relative rendering, terrain shadows, volumetric clouds, grass, rocks and
+wave-driven water lighting.
 
 ![A procedurally generated planet viewed from orbit](docs/images/orbit.png)
 
@@ -18,6 +19,11 @@ These are direct, HUD-free captures from the application. Reproduce them with
 [water lighting and its limitations](docs/water-lighting.md) and
 [rendering performance](docs/rendering-performance.md) for the current design.
 Later sections of this README include historical implementation notes.
+
+The first [volumetric cloud layer](docs/clouds.md) is enabled by default. **C**
+switches between clouds and clear air. It follows the planet's curvature and can
+be viewed from below, inside, or from orbit. Cloud shadows on terrain and water,
+and cloud reflections, are not implemented yet.
 
 ## Run
 
@@ -81,6 +87,7 @@ there is no need to press Tab before moving. **Shift** boosts movement speed.
 | Tab | Switch to flight | Switch to orbit / descent |
 | Home | Reset to starting orbit | Reset to starting orbit |
 | F | Toggle atmosphere | Toggle atmosphere |
+| C | Toggle volumetric clouds | Toggle volumetric clouds |
 | R | Toggle sun rays | Toggle sun rays |
 | H | Toggle local cast shadows | Toggle local cast shadows |
 | M | Toggle surface material detail | Toggle surface material detail |
@@ -169,8 +176,8 @@ individual buffer count. `dt` is the smoothed simulation frame interval: with
 time normally, but part of the main-thread time in `-sync-terrain` mode.
 
 Lighting uses a fixed directional sun and a spherical atmosphere. Nearby rock
-and terrain shadows are supported. Distant mountain shadows, material textures,
-and a walking controller remain unimplemented.
+and terrain shadows, distant mountain shadows, and procedural surface materials
+are supported. A walking controller remains unimplemented.
 Terrain can visibly pop while detail levels change;
 rapid movement or spawning near the ground can outrun refinement temporarily.
 
@@ -186,14 +193,17 @@ over foreground geometry. This follows the sky/surface integration approach in
 
 Press **F** to compare at the same viewpoint, or launch with `-atmosphere=false`.
 
-The engine's screen-space sun shafts are enabled by default. **R** toggles them;
+With clouds disabled, the engine's extra screen-space sun shafts are enabled by
+default. **R** toggles them;
 `-sun-rays=false` disables them at startup. The same shafts remain active in space, with visibility following the spherical
 horizon. They are zero when the atmosphere is disabled.
 The narrower 0.55-screen-height radius and HDR luminance threshold of 1–2 keep
 the effect concentrated near the sun. These are artistic settings, not physical
 scattering coefficients. The pass samples scene brightness without depth, so
 it approximates rays around ridgelines rather than tracing terrain shadows
-through the atmosphere. No engine changes are required.
+through the atmosphere. Cloud mode disables that earlier screen-space effect
+and integrates volumetric scattering with cloud extinction instead. The existing
+terrain-shadowed atmospheric scattering and underwater shafts remain available.
 
 To reproduce a sun-facing view, use `-flight -heading -63.2 -longitude 51.8427734
 -latitude 0 -altitude 1000`. Heading is degrees east of local north. Changing
@@ -204,9 +214,11 @@ validation; captures are `captures/sun-rays-{on,off,ridge}.png`.
 The default 500 km planet uses a 3.5 km molecular scale height and a 21 km
 atmosphere cutoff. Parameters scale within bounds for the configurable radius;
 they are tuned for this smaller world rather than a scientific Earth model.
-The shader uses 16 view samples and six samples for each sunlight path. It has
-no clouds, multiple scattering, refraction, or mountain-shadowed scattering. Low sample
-counts and changing terrain LOD can still show artifacts at grazing angles.
+Clear-air integration uses 16 view samples and a cached six-sample sunlight
+integral. Mountain shadows affect in-scattered light. Cloud mode uses a separate
+bounded march with approximate multiple scattering; see [clouds](docs/clouds.md)
+for its controls and limitations. Low sample counts and changing terrain LOD can
+still show artifacts at grazing angles.
 
 The paired shader overrides and their source live in `atmosphere/`; the SPIR-V
 is embedded, so normal builds need no shader compiler. After changing GLSL:
@@ -217,10 +229,10 @@ go build -o bin/universebuild.exe .
 ```
 
 Shader generation needs `glslc` from the Vulkan SDK on PATH. The application
-currently owns the six sky-palette UBO slots as custom atmosphere parameters.
-Both shaders decode that same layout. Do not mix them with the stock sky, fog,
-or cloud shaders; proper application-owned uniform bindings are tracked in
-[GlyphEngine #94](https://github.com/derekmwright/glyphengine/issues/94).
+uses its own 176-byte parameter block at set 1, binding 6. Engine sky colors and
+shadow data retain their engine-owned layout. These shaders and the application
+view passes are designed to work together; stock cloud shaders assume a flat
+world and cannot replace the spherical integration unchanged.
 
 Validation captures include orbit, a 100 m daytime view, the terminator, the
 night side, and a full descent/ascent. An initial 600-frame timing sample at

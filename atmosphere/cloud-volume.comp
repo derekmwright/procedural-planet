@@ -1,0 +1,109 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=2,binding=0) uniform sampler2D sceneDepth;
+layout(set=2,binding=4,rgba16f) uniform writeonly image2D cloudLight;
+layout(set=2,binding=5,rgba16f) uniform writeonly image2D cloudTransmission;
+#define COMPUTE_PASS
+uvec2 cloudPixel;
+#define AIR_SAMPLE_PIXEL cloudPixel
+#include "air-frame.glsl"
+#include "parameters.glsl"
+#include "engine-lighting.glsl"
+#include "common.glsl"
+#include "air-endpoint.glsl"
+#include "cloud-density.glsl"
+
+float cloudPhase(float cosine,float g) {
+    return (1.0-g*g)/(4.0*PI*pow(max(1.0+g*g-2.0*g*cosine,0.001),1.5));
+}
+float cloudSunDepth(vec3 p,vec3 sun) {
+    vec2 hit=sphereInterval(p,sun,PLANET_RADIUS+cloud.layer.x+cloud.layer.y);
+    float distance=min(max(hit.y,0.0),12.0),depth=0.0;
+    for(int j=0;j<5;j++) {
+        float a=float(j)/5.0,b=float(j+1)/5.0;
+        float lo=a*a*distance,hi=b*b*distance;
+        depth+=cloudDensity(p+sun*((lo+hi)*0.5),false,(hi-lo)*0.5)*(hi-lo);
+    }
+    return depth*cloud.layer.z;
+}
+void appendAir(inout Air accumulated,Air segment) {
+    accumulated.light+=accumulated.transmittance*segment.light;
+    accumulated.transmittance*=segment.transmittance;
+}
+void marchCloud(inout Air result,vec3 dir,vec3 sun,vec2 interval,float cone) {
+    float span=interval.y-interval.x;
+    if(span<=0.0) return;
+    int steps=int(clamp(ceil(span/0.10),8.0,cloud.wind.z));
+    float cosine=clamp(dot(dir,sun),-1.0,1.0);
+    float phaseR=3.0/(16.0*PI)*(1.0+cosine*cosine);
+    float phaseM=cloudPhase(cosine,0.76);
+    float phaseC=0.85*cloudPhase(cosine,0.65)+0.15*cloudPhase(cosine,-0.2);
+    float jitter=0.2+0.6*airSampleOffset(47,0);
+    for(int i=0;i<steps;i++) {
+        float a=float(i)/float(steps),b=float(i+1)/float(steps);
+        float lo=interval.x+a*a*span,hi=interval.x+b*b*span;
+        float dt=hi-lo;
+        float travel=mix(lo,hi,jitter);
+        vec3 p=EYE_PLANET+dir*travel;
+        vec2 airDensity=densityAt(p);
+        float density=cloudDensity(p,true,max(travel*cone,dt*0.5)),sigmaC=density*cloud.layer.z;
+        vec3 sigmaA=BETA_R*airDensity.x+vec3(BETA_M*airDensity.y);
+        vec3 incident=sunlight(p,sun)*pc.sunColor.rgb*SUN_ENERGY;
+        float terrainVisibility=airShadow((p-EYE_PLANET)*1000.0);
+        vec3 source=(BETA_R*airDensity.x*phaseR+vec3(BETA_M*airDensity.y*phaseM))*incident*terrainVisibility;
+        if(density>0.001) {
+            float tau=cloudSunDepth(p,sun);
+            // Bounded multiple-scattering approximation; attenuate and broaden
+            // each successive lobe. This is not a full multiple-scattering solve.
+            float lit=phaseC*exp(-tau)+0.28*cloudPhase(cosine,0.32)*exp(-tau*0.3)
+                +0.10/(4.0*PI)*exp(-tau*0.1);
+            float height=clamp((length(p)-PLANET_RADIUS-cloud.layer.x)/cloud.layer.y,0.0,1.0);
+            float day=smoothstep(-0.15,0.2,dot(normalize(p),sun));
+            vec3 skyFill=vec3(0.06,0.085,0.12)*mix(0.015,1.0,day)*(0.35+0.65*height);
+            source+=sigmaC*0.99*(incident*terrainVisibility*lit+skyFill);
+        }
+        vec3 sigma=sigmaA+vec3(sigmaC),transmit=exp(-sigma*dt);
+        result.light+=result.transmittance*source*(vec3(1.0)-transmit)/max(sigma,vec3(0.000001));
+        result.transmittance*=transmit;
+        if(max(result.transmittance.r,max(result.transmittance.g,result.transmittance.b))<0.002) break;
+    }
+}
+void renderCloud(ivec2 pixel) {
+    cloudPixel=uvec2(pixel);
+    ivec2 size=imageSize(cloudLight);
+    ivec2 full=textureSize(sceneDepth,0);
+    ivec2 source=clamp(ivec2((vec2(pixel)+0.5)/vec2(size)*vec2(full)),ivec2(0),full-1);
+    vec2 uv=(vec2(source)+0.5)/vec2(full);
+    float endpoint=airEndpoint(uv,texelFetch(sceneDepth,source,0).r);
+    vec3 dir=viewDirection(uv),sun=normalize(pc.sunDir.xyz);
+    float cone=max(length(viewDirection(uv+vec2(1.0/float(size.x),0))-dir),
+                   length(viewDirection(uv+vec2(0,1.0/float(size.y)))-dir));
+    vec4 intervals=cloudIntervals(EYE_PLANET,dir,endpoint);
+    Air result=Air(vec3(0),vec3(1));
+    if(cloud.layer.w<=0.0||intervals.y<=intervals.x&&intervals.w<=intervals.z) {
+        result=integrateAir(EYE_PLANET,dir,endpoint,sun,pc.sunColor.rgb);
+    } else {
+        float cursor=0.0;
+        for(int j=0;j<2;j++) {
+            vec2 segment=j==0?intervals.xy:intervals.zw;
+            if(segment.y<=segment.x) continue;
+            appendAir(result,integrateAir(EYE_PLANET+dir*cursor,dir,segment.x-cursor,sun,pc.sunColor.rgb));
+            marchCloud(result,dir,sun,segment,cone);
+            cursor=segment.y;
+        }
+        appendAir(result,integrateAir(EYE_PLANET+dir*cursor,dir,max(endpoint-cursor,0.0),sun,pc.sunColor.rgb));
+    }
+    imageStore(cloudLight,pixel,vec4(result.light,log2(1.0+endpoint)));
+    imageStore(cloudTransmission,pixel,vec4(result.transmittance,1));
+}
+void main() {
+    // A resize can recreate targets after LateUpdate supplied the dispatch.
+    // Stride over the live image, covering any newly exposed rows/columns on
+    // that first frame too; the next frame again uses one invocation per pixel.
+    ivec2 stride=ivec2(gl_NumWorkGroups.xy*gl_WorkGroupSize.xy);
+    ivec2 size=imageSize(cloudLight);
+    for(int y=int(gl_GlobalInvocationID.y);y<size.y;y+=stride.y)
+        for(int x=int(gl_GlobalInvocationID.x);x<size.x;x+=stride.x)
+            renderCloud(ivec2(x,y));
+}

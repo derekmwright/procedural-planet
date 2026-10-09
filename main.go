@@ -25,6 +25,9 @@ type game struct {
 	airPasses                                    *atmosphere.AirPasses
 	deferredAir                                  bool
 	airScale                                     float64
+	cloudPasses                                  *atmosphere.CloudPasses
+	cloudsEnabled                                bool
+	cloudScale, cloudCoverage                    float64
 	shoreFoam                                    bool
 	asyncTerrainUploads                          bool
 	waveCache                                    *atmosphere.WaveCache
@@ -90,10 +93,11 @@ func (g *game) Init(e *glyph.Engine) error {
 	}
 	if g.deferredAir {
 		var err error
-		g.airPasses, err = atmosphere.NewAirPasses(e.Renderer(), float32(g.airScale))
+		g.airPasses, err = atmosphere.NewAirPasses(e.Renderer(), float32(g.airScale), float32(g.cloudScale), g.world.Seed)
 		if err != nil {
 			return err
 		}
+		g.cloudPasses = g.airPasses.Clouds
 	}
 	if g.waterPasses {
 		var err error
@@ -213,7 +217,11 @@ func (g *game) camera(e *glyph.Engine) {
 	}
 	if g.airPasses != nil {
 		active := g.atmosphereEnabled && !(g.oceanEnabled && g.cam.eye.Dot(g.cam.eye) < math.Pow(g.world.Radius+g.seaLevel, 2)) && !g.causticsDebug
-		g.airPasses.SetEnabled(active)
+		clouds := active && g.cloudsEnabled
+		g.airPasses.SetEnabled(active, clouds)
+		if clouds {
+			parameters.Rendering[3] = 1
+		}
 		if active {
 			parameters.Rendering[0] = 1
 		}
@@ -223,7 +231,9 @@ func (g *game) camera(e *glyph.Engine) {
 		panic(fmt.Sprintf("upload planet shader parameters: %v", err))
 	}
 	var rays float32
-	if g.sunRaysEnabled && g.atmosphereEnabled && (!g.oceanEnabled || math.Sqrt(g.cam.eye.Dot(g.cam.eye)) > g.world.Radius+g.seaLevel) {
+	// Cloud mode integrates sun scattering in the volume. The engine's earlier
+	// screen-space halo has no cloud visibility and would double that lighting.
+	if parameters.Rendering[3] == 0 && g.sunRaysEnabled && g.atmosphereEnabled && (!g.oceanEnabled || math.Sqrt(g.cam.eye.Dot(g.cam.eye)) > g.world.Radius+g.seaLevel) {
 		// Keep the existing screen-space shafts in space. Account for the
 		// horizon dipping below the local tangent as the camera climbs.
 		distance := math.Sqrt(g.cam.eye.Dot(g.cam.eye))
@@ -251,6 +261,9 @@ func (g *game) Update(e *glyph.Engine, dt float32) {
 	}
 	if in.KeyPressed(input.KeyF) {
 		g.atmosphereEnabled = !g.atmosphereEnabled
+	}
+	if in.KeyPressed(input.KeyC) {
+		g.cloudsEnabled = !g.cloudsEnabled
 	}
 	if in.KeyPressed(input.KeyR) {
 		g.sunRaysEnabled = !g.sunRaysEnabled
@@ -318,9 +331,17 @@ func (g *game) Update(e *glyph.Engine, dt float32) {
 		rays = "on"
 	}
 	e.Debugf("Shift: faster | Tab: camera | F: atmosphere %s | R: sun rays %s | Home: reset | Esc: quit", air, rays)
+	e.Debugf("C: clouds %t | coverage %.0f%% | resolution %.0f%%", g.cloudsEnabled, g.cloudCoverage*100, g.cloudScale*100)
 	g.performance.draw(e)
 }
 func (g *game) LateUpdate(e *glyph.Engine, _ float32) {
+	if g.cloudPasses != nil {
+		state := (space{}).State()
+		if err := g.cloudPasses.Update(e.ViewProjection().Inv(), state.SunDir, state.SunColor, g.world.Radius, g.seaLevel, g.elapsed, g.cloudCoverage); err != nil {
+			g.lastError = err
+			e.Close()
+		}
+	}
 	if g.airPasses != nil {
 		state := (space{}).State()
 		if err := g.airPasses.Update(e.ViewProjection().Inv(), state.SunDir, state.SunColor); err != nil {
@@ -391,7 +412,16 @@ func run() error {
 	shoreFoam := flag.Bool("shore-foam", true, "enable animated shallow-water foam and wet shoreline sand")
 	deferredAir := flag.Bool("air-passes", true, "separate view atmosphere with depth-aware reconstruction (false: inline reference)")
 	airScale := flag.Float64("air-scale", 0.5, "atmosphere resolution scale (0.5 or 1 for quality comparisons)")
+	clouds := flag.Bool("clouds", true, "enable spherical volumetric clouds (C toggles; requires air-passes)")
+	cloudScale := flag.Float64("cloud-scale", 0.5, "cloud resolution scale: 0.25, 0.5, or 1")
+	cloudCoverage := flag.Float64("cloud-coverage", 0.52, "cloud coverage from 0 (clear) to 1 (overcast)")
 	flag.Parse()
+	if *cloudScale != 0.25 && *cloudScale != 0.5 && *cloudScale != 1 {
+		return fmt.Errorf("cloud-scale must be 0.25, 0.5, or 1")
+	}
+	if math.IsNaN(*cloudCoverage) || math.IsInf(*cloudCoverage, 0) || *cloudCoverage < 0 || *cloudCoverage > 1 {
+		return fmt.Errorf("cloud-coverage must be between 0 and 1")
+	}
 	if math.IsNaN(*erosionStrength) || math.IsInf(*erosionStrength, 0) || *erosionStrength < 0 || *erosionStrength > 2 {
 		return fmt.Errorf("erosion-strength must be between 0 and 2")
 	}
@@ -509,6 +539,7 @@ func run() error {
 	g.causticTemporal = *causticTemporal
 	g.shoreFoam = *shoreFoam
 	g.deferredAir, g.airScale = *deferredAir, *airScale
+	g.cloudsEnabled, g.cloudScale, g.cloudCoverage = *clouds, *cloudScale, *cloudCoverage
 	g.asyncTerrainUploads = *asyncTerrainUploads
 	e, err := glyph.New(g, opts...)
 	if g.terrain != nil {

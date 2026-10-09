@@ -23,6 +23,7 @@ float airEndpoint(vec2 uv,float depth) {
             surface=true;
         }
     }
-    // The sky already carries its atmosphere in this first separated version.
-    return surface?distance:-1.0;
+    // Cloud mode owns sky atmosphere too: clouds and air must be composed in
+    // depth order, without adding a second sky haze layer behind the volume.
+    return surface||DEFERRED_CLOUDS?distance:-1.0;
 }

@@ -27,7 +27,7 @@ def main():
     for name, pose in SCENES.items():
         print(f"Capturing {name}...", flush=True)
         args = [str(ROOT / "bin/universebuild.exe"), "-seed=7", "-width=1600", "-height=900",
-                "-frames=1201", "-sync-terrain", "-vsync=false", "-hud=false", "-validate",
+                "-frames=1201", "-sync-terrain", "-vsync=false", "-hud=false", "-validate", "-clouds=false",
                 *pose, f"-screenshot={output / (name + '.png')}"]
         log_path = logs / (name + ".log")
         with log_path.open("w") as log:

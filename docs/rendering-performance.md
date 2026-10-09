@@ -76,8 +76,11 @@ Surface BRDFs, material detail and direct mountain shadows remain at full
 resolution. The default view atmosphere now has separate GPU timings and uses
 half width and half height. It outputs in-scattered radiance and RGB
 transmittance, then composes `surface * transmittance + radiance` in linear HDR.
-Sky and water reflection/refraction rays still integrate their own atmosphere.
-Underwater scattering retains its existing separate passes.
+In clear-air mode, sky and water reflection/refraction rays still integrate
+their own atmosphere. Cloud mode replaces the clear-air view passes and also
+owns sky scattering, integrating air and clouds together in depth order.
+Underwater scattering retains its existing separate passes; water reflections
+and refracted sky views do not yet include clouds.
 
 The view endpoint is reconstructed from opaque scene depth, then shortened to
 the analytic sea sphere where water is closer. Using seabed depth for the air
@@ -89,7 +92,8 @@ without a suitable low-resolution neighbor use the full-resolution integration,
 so thin foreground silhouettes cannot borrow distant haze or lose haze entirely.
 There is no temporal accumulation or stale lighting history in this version.
 The atmospheric pass is disabled underwater, when atmosphere is off, and during
-the caustic debug view. Ordinary sky pixels retain their inline atmosphere.
+the caustic debug view. Ordinary sky pixels retain their inline atmosphere only
+when clouds are disabled.
 
 The four application passes are:
 
@@ -165,27 +169,51 @@ timings. An isolated GPU result is not a guarantee of overall frame rate or fan
 behavior; draw submission, terrain refinement, pacing, clocks, and other GPU
 work can change the wall frame time.
 
-## What clouds still need
+## First cloud layer, 2026-10-09
 
-This change creates a measurable atmosphere budget and explicit view endpoints;
-it does not implement volumetric clouds. Before adding them:
+The [cloud implementation](clouds.md) adds a seeded spherical volume, depth
+clipping against terrain and analytic water, and joint air/cloud integration.
+It supports views from below, inside and above the layer. It has no temporal
+history. The cloud and clear-air modes share the full-resolution output and
+presentation pass; the earlier screen-space shafts are disabled in cloud mode.
 
-1. Establish their own GPU budget in the same ground/coast/orbit views. The
-   remaining expensive water reflection path needs separate attention if coast
-   performance is still limiting.
-2. Integrate cloud radiance and transmission with the air segments in depth
-   order. A cloud layer cannot simply be drawn over already-fogged opaque terrain.
-   Ocean endpoints must clip it consistently with terrain endpoints.
-3. Share sun/cloud visibility with ground and ocean direct light. Keep terrain
-   shadowing and cloud shadowing distinguishable in timings and toggles.
-4. Add temporal reconstruction only with camera-rebase, resize, water crossing,
-   and disocclusion invalidation. Retain a non-temporal reference mode.
+RX 7900 XTX, 3840x2054, engine `5a0d940cc8f7`, identical executable and source
+geometry, two runs per variant in alternating order. Each run has 1,201 frames,
+a 720-frame warmup, and four complete measured 120-frame windows. Values below
+are medians of the eight window means per scene/variant, not pooled percentiles.
+Extra screen-space shafts are off in every variant. Validation and pipeline
+statistics are disabled for timing.
 
-The current engine screen-space sun shafts execute before the application air
-composition, so their composition differs slightly from the inline reference.
-That ordering needs an explicit decision when clouds join the pipeline. Far
-terrain shadow coverage/resolution remains finite; this refactor does not add
-planet-wide terrain ray tracing.
+| Scene | Clear GPU ms | Half-resolution clouds GPU ms | Quarter-resolution clouds GPU ms |
+| --- | ---: | ---: | ---: |
+| Ground and rocks | 3.158 | 4.279 | 2.622 |
+| Shallow shoreline | 6.323 | 7.614 | 5.609 |
+| Orbital terminator | 1.771 | 5.009 | 2.950 |
+
+The default half-resolution mode adds 1.12, 1.29 and 3.24 ms respectively in
+these views. Its combined cloud/air volume pass costs 2.18, 2.53 and 2.98 ms.
+The net frame cost is smaller because it replaces the old clear-air passes and
+full-resolution sky scattering. That same replacement can make quarter-resolution
+cloud mode faster than clear air in land/coast views; this does not mean cloud
+integration is free or that the quality is equivalent. These are fixed views,
+not worst-case guarantees. Half resolution remains the default for finer edges.
+
+Reproduce with:
+
+```powershell
+python tools/profile_scene.py --scenes ground coast orbit --variants clouds-off clouds-half clouds-quarter --repeats 2 --frames 1201 --warmup 720 --screenshots
+```
+
+Local source evidence: `captures/clouds/perf-final/summary.json`, including
+commands, executable SHA-256, complete GPU windows, and camera/geometry parity
+checks. A shorter draft run was discarded because terrain had not settled.
+The profiling script defaults non-cloud variants to `-clouds=false` so existing
+effect comparisons retain their clear-air baseline.
+
+Next work: shared cloud sunlight transmission on terrain and ocean, cloud
+reflections, richer density shaping, then temporal reconstruction with explicit
+camera-rebase/wind, water-crossing, resize and disocclusion handling. Far terrain
+shadow coverage remains finite; there is no planet-wide terrain ray tracing.
 
 ### Engine readiness, 2026-10-09
 
@@ -198,24 +226,27 @@ disocclusion handling still need application implementation.
 
 The engine's `x/sky/clouds.frag` is a useful reference, but its upward-facing,
 flat-height layers cannot be enabled unchanged for a spherical planet with
-orbital and inside-cloud views. The first milestone should use a spherical
-cloud shell with terrain/ocean depth clipping and depth-ordered air composition,
-plus separate GPU timing and a non-temporal reference mode.
+orbital and inside-cloud views. The initial spherical implementation now uses
+the existing application-pass APIs without an engine dependency change.
 
-Two engine improvements are filed, neither blocking that first milestone:
+Engine improvements filed for subsequent work:
 
 - [#190](https://github.com/derekmwright/glyphengine/issues/190): sampled 3D
   textures for cached noise and volume mip filtering. The current fallback is
-  procedural density or a 2D slice atlas; its cost must be measured.
+  a 2D slice atlas with an explicit three-dimensional mip chain; measured above.
 - [#191](https://github.com/derekmwright/glyphengine/issues/191): additional
   scene-wide texture bindings for cloud shadows on terrain/ocean. The current
   four bindings carry the sun table, two wave fields, and caustics. Cloud rendering
   can begin with pass-local inputs while this shared-lighting interface improves.
+- [#192](https://github.com/derekmwright/glyphengine/issues/192): more than sixteen
+  named application GPU timers. The current water/air/cloud pipeline fills all
+  sixteen registered slots, even though several modes are mutually exclusive.
+  Sharing atmospheric presentation made this milestone fit. Later passes should
+  remain separately measurable rather than dropping instrumentation.
 
 The existing intermediate-cascade request #189 improves terrain-shadow detail,
 and #187 adds application-pass pipeline counters. Neither is a cloud blocker;
-existing per-pass GPU timers are sufficient to begin profiling. No cloud GPU
-budget or visual quality has been validated yet.
+existing per-pass GPU timers were sufficient to profile the first cloud layer.
 
 ## Measured results, 2026-10-02
 

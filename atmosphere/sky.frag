@@ -41,7 +41,8 @@ void main() {
         outColor=vec4(oceanComposite(vec3(0.0),vec3(0.0),dir,limit),1.0);
         return;
     }
-    Air air=integrateAir(EYE_PLANET,dir,limit,sunDir,pc.sunColor.rgb);
+    Air air=DEFERRED_CLOUDS?Air(vec3(0),vec3(1)):
+        integrateAir(EYE_PLANET,dir,limit,sunDir,pc.sunColor.rgb);
     // Slightly enlarged angular disc, constant in space and at the surface.
     float disc=1.0-smoothstep(0.009-aa,0.009+aa,separation);
     if (!blocked) background += disc*pc.sunColor.rgb*12.0;

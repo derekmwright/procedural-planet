@@ -215,7 +215,9 @@ vec3 sunlight(vec3 point,vec3 sunDir) {
 // Fixed midpoint samples otherwise align into visible bands across the sky.
 // No frame-time seed: a stationary camera must not shimmer.
 float airSampleOffset(int interval, int sampleIndex) {
-    #ifdef COMPUTE_PASS
+#ifdef AIR_SAMPLE_PIXEL
+    uvec2 pixel=AIR_SAMPLE_PIXEL;
+#elif defined(COMPUTE_PASS)
     uvec2 pixel=gl_GlobalInvocationID.xy;
 #else
     uvec2 pixel=uvec2(gl_FragCoord.xy);
@@ -269,7 +271,7 @@ Air integrateAir(vec3 origin, vec3 dir, float maxDistance, vec3 sunDir, vec3 sun
 }
 
 // Only the eye-to-visible-surface segment is deferred. Reflected/refracted
-// rays and the sky continue to use integrateAir directly.
+// rays continue to use integrateAir directly. Cloud mode also defers sky air.
 Air viewAir(vec3 direction,float distance,vec3 sun,vec3 color) {
     if(DEFERRED_AIR) return Air(vec3(0),vec3(1));
     return integrateAir(EYE_PLANET,direction,distance,sun,color);
