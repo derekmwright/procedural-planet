@@ -13,6 +13,7 @@ SCENES = {
     "ground": ["-longitude=20.0015", "-latitude=12.6048", "-altitude=2", "-flight", "-heading=16.73", "-pitch=12", "-ocean=false"],
     "mountains": ["-longitude=60", "-latitude=12.6", "-altitude=900", "-flight", "-heading=-72", "-pitch=6"],
     "coast": ["-sea-level=137.3", "-altitude=20", "-flight", "-heading=-72", "-pitch=8"],
+    "cloud-horizon": ["-longitude=40", "-latitude=0", "-altitude=1500", "-flight", "-heading=-45", "-pitch=10"],
     "inside": ["-longitude=20", "-latitude=12.6", "-altitude=3800", "-flight", "-heading=16.73", "-pitch=0"],
     "above": ["-longitude=20", "-latitude=12.6", "-altitude=12000", "-flight", "-heading=16.73", "-pitch=-20"],
     "orbit": ["-longitude=20", "-latitude=12.6", "-altitude=800000"],

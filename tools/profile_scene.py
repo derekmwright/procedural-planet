@@ -25,6 +25,7 @@ SCENES = {
     "mountains": ["-longitude=60", "-latitude=12.6", "-altitude=900",
                   "-flight", "-heading=-72", "-pitch=-8", "-ocean=false"],
     "coast": ["-sea-level=137.3", "-altitude=20", "-flight", "-heading=-72", "-pitch=-2"],
+    "cloud-horizon": ["-longitude=40", "-latitude=0", "-altitude=1500", "-flight", "-heading=-45", "-pitch=10"],
     "underwater": ["-sea-level=137.3", "-altitude=2", "-flight", "-heading=-72", "-pitch=-20"],
     "orbit": ["-longitude=100", "-latitude=12.6", "-altitude=300000"],
 }

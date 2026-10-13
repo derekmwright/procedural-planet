@@ -215,6 +215,64 @@ cloud reflections, richer density shaping, then temporal reconstruction with exp
 camera-rebase/wind, water-crossing, resize and disocclusion handling. Far terrain
 shadow coverage remains finite; there is no planet-wide terrain ray tracing.
 
+## Cloud haze banding, 2026-10-13
+
+Horizontal streaks beneath distant clouds came from sampling cloud visibility
+only at the midpoint of each atmospheric interval. Terrain visibility already
+used stratified samples within the interval; the cloud term missed that filtering.
+Increasing cloud view-march or self-lighting samples did not remove the bands.
+A dense atmospheric reference did.
+
+The retained fix averages the product of terrain and cloud visibility at the
+existing one-to-four stratified positions. Atmospheric integration stays at
+16 intervals, and the cloud view/self-lighting budgets are unchanged. Jitter
+remains fixed per pixel, with no frame-time noise or added history/pass/target.
+There are more cloud-field lookups along long paths, including the clear-air
+calculation used by water reflections.
+
+RX 7900 XTX, 3840×2054, MSAA 4, half-resolution clouds, cloud shadows enabled,
+fixed 60 Hz simulation, synchronous terrain. VSync, HUD, validation, pipeline
+statistics and extra screen-space shafts were off for timings. Two serial runs
+per build used 1,201 frames per run, 720 warmup frames and four complete 120-frame
+windows per run. Values are medians of eight window means; cameras,
+source geometry, submissions and measured frame numbers match across builds.
+
+| View | Before GPU ms | After GPU ms | Added GPU ms |
+| --- | ---: | ---: | ---: |
+| Cloud bank at horizon | 8.905 | 10.577 | 1.672 |
+| Shallow shoreline | 8.733 | 10.405 | 1.671 |
+| Orbital terminator | 5.728 | 7.474 | 1.746 |
+
+The cloud-volume pass increases by 0.25–0.47 ms; most of the additional cost is
+in opaque shading, which includes water's inline reflected-air integration.
+Reporting only the cloud-volume timer would miss that cost. These are fixed-view
+measurements, not a worst-case bound. A cheaper two-sample integration failed the
+accuracy regression. An above-shell early exit saved some time at the coast but
+was slower in orbit, so it was not retained.
+
+```powershell
+python tools/profile_scene.py --scenes cloud-horizon coast orbit --variants clouds-half --repeats 2 --warmup 720 --frames 1201 --screenshots
+python tools/capture_clouds.py --scenes cloud-horizon coast orbit --output captures/cloud-haze-check
+```
+
+The horizon reproduction uses seed 7, longitude 40, latitude 0, altitude 1,500 m
+above terrain, flight heading -45° and pitch 10°. Matched 4K captures remove the
+repeated bands. Fine spatial sampling noise and very bright cloud rims remain
+separate limitations. Local evidence, including the denser diagnostic references,
+executable hashes, profiles and parity checks, is in `captures/cloud-streaks`;
+`performance-comparison.json` summarizes the retained fix. `perf-early-out` and
+the lower-sample diagnostics are discarded experiments.
+
+`TestCloudAirShadowSamplingGPU` compares the production atmospheric integrator
+against 1,024 uniform intervals through translated analytic cloud-shadow bands.
+Independent row jitter separates coherent phase-dependent error from random
+sampling noise. The old midpoint lookup fails with RMS error 60.432 and maximum
+188.000; the fix measures 2.016 and 4.836 in the diagnostic's 8-bit channel levels.
+These are test-image error units, not scene luminance percentages. The regression
+allows RMS 3 and maximum 8 for finite sampling and quantization. Full package
+tests, vet, shader compilation and cloud GPU checks pass. Separate horizon,
+coastal and orbital captures pass Vulkan synchronization validation.
+
 ## Cloud shadows, 2026-10-09
 
 Clouds now attenuate direct sunlight on terrain, ocean, seabed caustics and air.

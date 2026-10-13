@@ -262,18 +262,20 @@ Air integrateAir(vec3 origin, vec3 dir, float maxDistance, vec3 sunDir, vec3 sun
         vec3 point=origin+dir*((lo+hi)*0.5);
         vec2 density=densityAt(point);
         vec2 segment=density*stepLength;
-        // Average visibility across the integration interval. A single midpoint
-        // projects an isolated mountain silhouette into otherwise empty air.
+        // Average joint terrain/cloud visibility across the integration interval.
+        // Sampling cloud shadows only at the midpoint repeats a cloud silhouette
+        // across long near-horizon intervals, leaving horizontal bands in haze.
         float visibility=0.0;
         // Close terrain spans less than a far-shadow texel per interval.
         // Reserve supersampling for long paths that cross shadow boundaries.
         int shadowSamples=int(clamp(ceil(stepLength/0.25),1.0,4.0));
         for(int j=0;j<shadowSamples;j++) {
             float t=lo+(float(j)+airSampleOffset(i,j))/float(shadowSamples)*stepLength;
-            visibility+=airShadow((origin-EYE_PLANET+dir*t)*1000.0);
+            vec3 samplePoint=origin+dir*t;
+            visibility+=airShadow((origin-EYE_PLANET+dir*t)*1000.0)*cloudSunVisibility(samplePoint);
         }
         vec3 attenuation=extinction(opticalDepth+segment*0.5)*sunlight(point,sunDir)
-            *(visibility/float(shadowSamples))*cloudSunVisibility(point);
+            *(visibility/float(shadowSamples));
         result.light += attenuation * (BETA_R*density.x*phaseR+vec3(BETA_M*density.y*phaseM)) * stepLength;
         opticalDepth+=segment;
     }

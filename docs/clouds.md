@@ -95,6 +95,13 @@ along their short integration path. Ambient lighting remains unchanged. The
 visible clouds retain their existing sunlight march for self-shadowing, avoiding
 applying the cached extinction twice to cloud lighting.
 
+Clear-air integration averages joint terrain and cloud visibility at the same
+stratified positions within each interval. Sampling cloud shadows only at the
+interval midpoint caused repeated horizontal bands beneath distant cloud banks.
+This uses the existing one-to-four visibility samples per interval, with fixed
+spatial jitter; the 16 atmospheric intervals and cloud march budget are unchanged.
+It adds cloud-field lookups along long rays, without adding passes or history.
+
 ![Cloud shadows falling across the landscape](images/cloud-shadows.png)
 
 ## Performance and validation
@@ -114,6 +121,11 @@ consumer lookups, not just the atlas dispatch. See the
 for matched totals and reproduction settings. These are fixed-view measurements,
 not a maximum cost across the world.
 
+The later fix for horizontal cloud-shadow bands in haze adds **about 1.7 ms** in
+three matched 4K views, including extra lookups in water reflections. See the
+[haze sampling comparison](rendering-performance.md#cloud-haze-banding-2026-10-13)
+for the current measurements and regression evidence.
+
 ```powershell
 go generate ./atmosphere
 go test ./...
@@ -124,7 +136,7 @@ go test ./atmosphere -run '^TestCloud' -count=1
 Remove-Item Env:PLANET_GPU_TEST
 Remove-Item Env:GLYPHENGINE_SYNC_VALIDATION
 go build -o bin/universebuild.exe .
-python tools/capture_clouds.py --scenes ground coast inside above orbit night --output captures/cloud-check
+python tools/capture_clouds.py --scenes ground cloud-horizon coast inside above orbit night --output captures/cloud-check
 ```
 
 GPU regression checks exercise the actual atlas sampler across periodic seams
@@ -135,6 +147,10 @@ The shadow GPU fixture runs the production integrator with constant density and
 checks its result against analytic path lengths, including inside/above-cloud
 receivers, both lobes, atlas edges and disabled shadows. Lifecycle checks update
 the shadow producer while switching modes and resizing targets.
+The haze regression replaces the external cloud-visibility field with translated
+analytic shadow bands and compares the production integrator with a dense
+1,024-interval reference. Averaging independently jittered rows isolates coherent
+banding from spatial sampling noise; the former midpoint lookup fails this check.
 Validation captures cover day/night, coastal water and inside/above-layer views.
 The 3,600-frame descent/ascent tour passed Vulkan validation and confirmed
 clouds disable underwater and restore above water. A fixed underwater comparison
