@@ -26,6 +26,7 @@ SCENES = {
                   "-flight", "-heading=-72", "-pitch=-8", "-ocean=false"],
     "coast": ["-sea-level=137.3", "-altitude=20", "-flight", "-heading=-72", "-pitch=-2"],
     "cloud-horizon": ["-longitude=40", "-latitude=0", "-altitude=1500", "-flight", "-heading=-45", "-pitch=10"],
+    "inside": ["-longitude=20", "-latitude=12.6", "-altitude=3800", "-flight", "-heading=16.73", "-pitch=0"],
     "underwater": ["-sea-level=137.3", "-altitude=2", "-flight", "-heading=-72", "-pitch=-20"],
     "orbit": ["-longitude=100", "-latitude=12.6", "-altitude=300000"],
 }

@@ -273,6 +273,66 @@ allows RMS 3 and maximum 8 for finite sampling and quantization. Full package
 tests, vet, shader compilation and cloud GPU checks pass. Separate horizon,
 coastal and orbital captures pass Vulkan synchronization validation.
 
+## Fine cloud-body bands, 2026-10-13
+
+The later cloud-height screenshots exposed a separate artifact inside the cloud
+bodies. The view march reused one jitter offset along each ray and restricted
+it to the middle 60% of every interval. The unsampled gaps produced coherent
+horizontal lines; ordinary independent random offsets replaced the lines with
+visible grain. More density samples alone and denser self-shadow integration
+did not solve the issue at the original view budget.
+
+The retained change samples the full interval with spatial interleaved gradient
+noise, varying phase and orientation between steps. A 3×3 depth-weighted cloud
+reconstruction filters radiance and RGB transmission together before compositing
+them with scene color. The 96 view steps, five sunlight samples, half-resolution
+targets and memory allocations are unchanged. Clear-air reconstruction keeps its
+four taps. Sample positions are time-independent; no temporal history is added.
+
+RX 7900 XTX, 3840×2054, MSAA 4, half-resolution clouds and cloud shadows enabled.
+VSync, HUD, validation, pipeline statistics and extra screen-space shafts were
+off. Two alternating before/after runs per view used 1,201 frames, 720 warmup
+frames and four complete 120-frame windows per run. The values below are medians
+of eight window means. Camera, source geometry, draw submissions and measured
+frame numbers matched between builds.
+
+| View | Before GPU ms | After GPU ms | Difference ms |
+| --- | ---: | ---: | ---: |
+| Inside cloud layer | 10.464 | 10.349 | -0.114 |
+| Cloud bank at horizon | 10.497 | 10.915 | +0.418 |
+| Orbital terminator | 7.286 | 7.494 | +0.208 |
+
+The cloud-volume timer changes by less than 0.05 ms in these views; the main
+added work is reconstruction. Treat the small improvement in the inside view
+as approximately unchanged total cost, not a general speedup. A discarded
+384-step diagnostic reached 20.96/24.44 ms total GPU time in the inside/horizon
+views, versus roughly 10.5 ms before. Those were single diagnostic runs and are
+not the shipped settings. These measurements are fixed views, not worst-case
+bounds across the world.
+
+```powershell
+python tools/profile_scene.py --scenes inside cloud-horizon orbit --variants clouds-half --repeats 2 --warmup 720 --screenshots
+python tools/capture_clouds.py --scenes inside above ground mountains night underwater --output captures/cloud-body-check
+```
+
+The `inside` pose uses seed 7, longitude 20, latitude 12.6, altitude 3,800 m
+above terrain, flight heading 16.73° and pitch 0°. Evidence and parity checks
+are under `captures/cloud-lines`, with the retained timings summarized in
+`performance-comparison.json`. Matched captures show the horizontal pattern
+removed; faint spatial grain in thin clouds remains a limitation.
+
+`TestCloudViewSamplingGPU` compares the actual production march through a
+homogeneous medium with translated analytic illumination against 4,096 uniform
+reference intervals. Averaging independent rows isolates coherent error from
+sampling noise; Beer–Lambert transmission is checked separately. The former
+offset fails at RMS 6.932 / maximum 13.703, while the fix measures 1.147 / 1.758
+in diagnostic 8-bit channel levels. These are test-image units, not percentages
+of scene luminance. The limits are RMS 3 / maximum 8 to allow finite sampling
+and capture quantization. Full package tests, vet and the cloud GPU suite pass,
+including frozen-field restoration through toggles, resize and an undersized
+dispatch. Full-resolution inside, above-layer and ground captures pass Vulkan
+validation.
+
 ## Cloud shadows, 2026-10-09
 
 Clouds now attenuate direct sunlight on terrain, ocean, seabed caustics and air.

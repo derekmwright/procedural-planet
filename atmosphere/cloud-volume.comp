@@ -31,6 +31,16 @@ void appendAir(inout Air accumulated,Air segment) {
     accumulated.light+=accumulated.transmittance*segment.light;
     accumulated.transmittance*=segment.transmittance;
 }
+float cloudSampleOffset(int step) {
+    // Interleaved gradient noise (Jorge Jimenez, SIGGRAPH 2014). Nearby pixels
+    // cover the whole interval, so a small spatial filter can average the error.
+    // Alternate its orientation between steps to avoid a persistent diagonal;
+    // keep it independent of time so a stationary view does not shimmer.
+    vec2 pixel=vec2(cloudPixel);
+    if((step&1)!=0) pixel=pixel.yx;
+    float shift=fract(float(step)*0.61803398875);
+    return fract(52.9829189*fract(dot(pixel,vec2(0.06711056,0.00583715))+shift));
+}
 void marchCloud(inout Air result,vec3 dir,vec3 sun,vec2 interval,float cone) {
     float span=interval.y-interval.x;
     if(span<=0.0) return;
@@ -39,12 +49,13 @@ void marchCloud(inout Air result,vec3 dir,vec3 sun,vec2 interval,float cone) {
     float phaseR=3.0/(16.0*PI)*(1.0+cosine*cosine);
     float phaseM=cloudPhase(cosine,0.76);
     float phaseC=0.85*cloudPhase(cosine,0.65)+0.15*cloudPhase(cosine,-0.2);
-    float jitter=0.2+0.6*airSampleOffset(47,0);
     for(int i=0;i<steps;i++) {
         float a=float(i)/float(steps),b=float(i+1)/float(steps);
         float lo=interval.x+a*a*span,hi=interval.x+b*b*span;
         float dt=hi-lo;
-        float travel=mix(lo,hi,jitter);
+        // A shared offset restricted to [0.2,0.8] left unsampled gaps in every
+        // interval. On grazing rays those gaps appeared as horizontal bands.
+        float travel=mix(lo,hi,cloudSampleOffset(i));
         vec3 p=EYE_PLANET+dir*travel;
         vec2 airDensity=densityAt(p);
         float density=cloudDensity(p,true,max(travel*cone,dt*0.5)),sigmaC=density*cloud.layer.z;

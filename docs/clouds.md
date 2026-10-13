@@ -54,8 +54,12 @@ terrain shadow maps can shade the cloud volume. Clear-air segments before,
 between and after the shell reuse the existing atmospheric integrator.
 
 The march uses at most 96 samples per shell segment, with more samples near the
-eye and an early exit for near-zero transmission. Jitter is fixed per output
-pixel, so a frozen scene does not receive a new noise pattern every frame.
+eye and an early exit for near-zero transmission. Each interval samples its full
+width using spatial interleaved gradient noise, with the orientation and phase
+varied between steps. The former shared offset covered only the middle 60% of
+each interval, leaving gaps that appeared as fine horizontal bands in cloud
+bodies at grazing angles. Sample positions remain fixed per output pixel and
+step, so a frozen scene does not receive a new noise pattern every frame.
 There is no temporal accumulation or reprojection yet.
 
 Cloud shape, cellular erosion and large-scale coverage come from a seeded
@@ -69,6 +73,10 @@ would incorrectly blend unrelated slices.
 The compute pass writes radiance plus endpoint distance and RGB transmission
 to two reduced-resolution RGBA16F targets. The existing depth-aware atmospheric
 reconstruction produces `scene * transmission + radiance` in linear HDR.
+Cloud mode uses a small 3×3 spatial filter to average the distributed sampling
+error. It filters radiance and RGB transmission together, with endpoint-depth
+weights to reject samples across foreground silhouettes; it does not blur the
+underlying scene color. Clear-air mode retains four-tap bilinear reconstruction.
 Cloud and clear-air modes share the full-resolution output and presentation
 pass. At 3840×2054, the default cloud targets add about 30.1 MiB plus a 1.46 MiB
 noise atlas. Resources remain allocated while C switches modes.
@@ -126,6 +134,12 @@ three matched 4K views, including extra lookups in water reflections. See the
 [haze sampling comparison](rendering-performance.md#cloud-haze-banding-2026-10-13)
 for the current measurements and regression evidence.
 
+The subsequent fix for fine bands within the clouds retains the 96-step budget.
+Its reconstruction adds about **0.2–0.4 ms** in two matched 4K views, with total
+cost approximately unchanged in the cloud-height view. See the
+[cloud-body sampling comparison](rendering-performance.md#fine-cloud-body-bands-2026-10-13)
+for measurements, reproduction settings and the rejected dense-march option.
+
 ```powershell
 go generate ./atmosphere
 go test ./...
@@ -151,6 +165,11 @@ The haze regression replaces the external cloud-visibility field with translated
 analytic shadow bands and compares the production integrator with a dense
 1,024-interval reference. Averaging independently jittered rows isolates coherent
 banding from spatial sampling noise; the former midpoint lookup fails this check.
+The cloud-view sampling regression runs the production march in a homogeneous
+medium with a translated analytic lighting field, compared against 4,096 uniform
+reference intervals. It checks radiance bias after averaging independent rows
+and exact Beer–Lambert transmission. The old bounded offset fails the radiance
+check; the current spatial sampling passes without increasing the march budget.
 Validation captures cover day/night, coastal water and inside/above-layer views.
 The 3,600-frame descent/ascent tour passed Vulkan validation and confirmed
 clouds disable underwater and restore above water. A fixed underwater comparison
@@ -169,7 +188,9 @@ percentile 1/255); sparse silhouette differences remain from reconstruction.
 - Ocean reflections and the refracted sky seen from underwater remain clear-air
   views. The cloud view pass is disabled underwater to preserve water composition.
 - The single fixed layer has fairly soft, broad formations. Sun-facing edges can
-  be very bright. Thin silhouettes use the existing clear-air reconstruction
+  be very bright, and spatial sampling grain can remain in thin clouds,
+  especially at quarter resolution.
+  Thin silhouettes use the existing clear-air reconstruction
   fallback when no depth-compatible cloud sample exists. Density shaping,
   finer silhouettes and quality during fast motion need further refinement.
 - Multiple scattering and ambient cloud illumination are approximations. This
@@ -192,3 +213,6 @@ for noise-shaped participating media and efficient lighting, and
 [A Scalable and Production Ready Sky and Atmosphere Rendering Technique](https://sebh.github.io/publications/egsr2020.pdf)
 for atmospheric composition. The showcase uses its own smaller implementation;
 it does not reproduce either production renderer in full.
+Cloud sampling uses the interleaved gradient noise presented by Jorge Jimenez in
+[Next Generation Post Processing in Call of Duty: Advanced Warfare](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare/),
+with a fixed per-step phase and alternating orientation for this ray marcher.

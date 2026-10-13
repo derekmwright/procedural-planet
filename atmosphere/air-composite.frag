@@ -19,16 +19,25 @@ void main() {
     ivec2 size=textureSize(airLight,0);
     vec2 low=uv*vec2(size)-0.5, f=fract(low);
     ivec2 base=ivec2(floor(low));
+    // Cloud marching uses spatially distributed samples. Reconstruct its
+    // radiance AND transmission together, before applying them to the scene.
+    // Depth weights keep distant clouds from bleeding over foreground terrain.
+    // Clear-air mode retains its four-tap bilinear reconstruction.
+    bool clouds=DEFERRED_CLOUDS;
+    int taps=clouds?3:2;
+    if(clouds) base=ivec2(floor(low+0.5))-1;
     vec3 light=vec3(0),transmission=vec3(0);
     float weight=0.0;
-    for(int y=0;y<2;y++) for(int x=0;x<2;x++) {
+    for(int y=0;y<taps;y++) for(int x=0;x<taps;x++) {
         ivec2 q=clamp(base+ivec2(x,y),ivec2(0),size-1);
         vec4 l=texelFetch(airLight,q,0);
         if(l.a<0.0) continue;
         vec3 t=texelFetch(airTransmission,q,0).rgb;
         float delta=abs((exp2(l.a)-1.0)-endpoint);
         vec2 b=mix(1.0-f,f,vec2(x,y));
-        float w=b.x*b.y*exp(-delta/max(endpoint*0.03,0.002));
+        vec2 offset=vec2(base+ivec2(x,y))-low;
+        float spatial=clouds?exp(-0.75*dot(offset,offset)):b.x*b.y;
+        float w=spatial*exp(-delta/max(endpoint*0.03,0.002));
         light+=l.rgb*w; transmission+=t*w; weight+=w;
     }
     if(weight>0.00001) { light/=weight; transmission/=weight; }
