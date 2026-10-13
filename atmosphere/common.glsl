@@ -217,7 +217,7 @@ vec3 sunlight(vec3 point,vec3 sunDir) {
 layout(set=1,binding=11) uniform sampler2D cloudShadowTexture;
 #include "cloud-shadow-sample.glsl"
 float cloudSunVisibility(vec3 point) {
-    return exp(-cloudShadowDepth(cloudShadowTexture,point));
+    return cloudShadowVisibility(cloudShadowTexture,point);
 }
 #else
 float cloudSunVisibility(vec3 point) { return 1.0; }

@@ -83,11 +83,13 @@ noise atlas. Resources remain allocated while C switches modes.
 
 ## Cloud shadows
 
-A compute pass builds a sun-aligned optical-depth field before scene lighting.
+A compute pass builds a sun-aligned transmittance field before scene lighting.
 The 512×512 RGBA16F atlas uses 2 MiB and contains four 256×256 tiles: a local
 128 km projection and a whole-planet projection, each with separate near and
-far shell lobes. Each tile stores cumulative optical depth at four heights along
-its lobe. Receivers interpolate those depths and apply Beer–Lambert transmission.
+far shell lobes. Each tile integrates cumulative optical depth at four heights
+along its lobe and stores the corresponding transmitted sunlight. Spatial
+filtering and the local/global coverage blend average this light. Interpolation
+along a ray remains in optical depth, preserving Beer–Lambert attenuation.
 Mountains above a cloud remain sunlit; receivers inside it receive partial
 attenuation. The empty interior between shell lobes contributes no extinction.
 
@@ -111,6 +113,56 @@ spatial jitter; the 16 atmospheric intervals and cloud march budget are unchange
 It adds cloud-field lookups along long rays, without adding passes or history.
 
 ![Cloud shadows falling across the landscape](images/cloud-shadows.png)
+
+### Mountain shadow wedges (2026-10-13)
+
+Repeating dark wedges across a mountainside were reproduced in the isolated
+cloud-shadow mask. The terrain-shadow mask did not contain that row of wedges.
+The previous cache stored optical depth, applied bilinear filtering, and then
+exponentiated the result. At a boundary between opaque and clear cloud columns,
+this turns a half-covered footprint nearly black rather than transmitting half
+the sunlight. It exposes the projection grid as pointed dark lobes.
+
+The cache now exponentiates each ray's integrated depth before storage. The same
+hardware bilinear lookup then filters transmitted light correctly. Partial-lobe
+receivers interpolate logarithms of the filtered knots; complete lobes read the
+last knot directly. Near and far shell transmissions multiply, while the
+local/global coverage blend averages light. Atlas size, integration samples,
+texture fetch count, render passes and cloud density are unchanged. The 500 m
+local texels still limit shadow detail.
+
+`TestCloudShadowFilteringGPU` drives the production compute shader with adjacent
+opaque/clear columns and checks 16,384 receiver positions in both projections
+against an independent area-weighted light sum. The old filtering fails all
+16,384 samples; the new filtering passes. The homogeneous-extinction regression
+also verifies partial rays against analytic transmission, including inside,
+above, below and opposite-side receivers. Cloud and terrain-shadow GPU tests
+pass with Vulkan synchronization validation enabled.
+
+The reproduction uses seed 7, erosion, longitude 53.5, latitude 8.4, altitude
+1000 above terrain, flight heading 100, pitch 12, and fixed frame 601. The view
+volume is hidden only in diagnostic captures to expose the shadowed slope.
+Scripts, masks and before/after images are in the ignored
+`captures/shadow-bands` directory. This is a matching reproduction, not a saved
+camera pose from the user's screenshot.
+
+Matched RX 7900 XTX measurements at 3840×2054, 4× MSAA and half-resolution
+clouds show no measured performance regression. Values are median window means
+in milliseconds:
+
+| View | Total GPU before / after | Shadow producer before / after |
+| --- | ---: | ---: |
+| Ground | 5.619 / 5.550 | 0.362 / 0.363 |
+| Inside cloud layer | 10.572 / 10.548 | 0.364 / 0.365 |
+| Cloud horizon | 10.895 / 10.710 | 0.340 / 0.340 |
+
+Each view has two runs per build in before/after/after/before order, 1,201 frames
+per run, a 720-frame warmup and eight complete 120-frame measurement windows per
+build. Camera, terrain, vegetation and submission counts match. VSync, validation
+and screenshots were disabled for timing; separate ground, coast, inside-cloud
+and underwater captures passed Vulkan validation. The small total differences
+are treated as run variation, not a general speedup. Raw measurements and the
+comparison script are under `captures/shadow-bands`.
 
 ## Performance and validation
 
@@ -181,7 +233,7 @@ percentile 1/255); sparse silhouette differences remain from reconstruction.
 ## Current limits and next work
 
 - Cached cast shadows resolve broad formations: 500 m local texels and four
-  optical-depth knots per lobe smooth small features and vertical density changes.
+  transmittance knots per lobe smooth small features and vertical density changes.
   The global projection is coarser still. These are filtered approximations,
   not per-receiver cloud ray tracing. Mountains can shade clouds within the
   existing terrain shadow-map coverage.

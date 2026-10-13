@@ -17,7 +17,7 @@ const cloudShadowLocalHalfSpan = 64.0 // kilometres, independent of camera heigh
 //go:embed cloud-shadow.comp.spv
 var cloudShadowCompute []byte
 
-// CloudShadow stores sun-path optical depth at four knots in each shell lobe,
+// CloudShadow stores sun-path transmittance at four knots in each shell lobe,
 // with local and whole-planet projections. The altitude knots distinguish a
 // receiver below a cloud from one inside or above the same cloud.
 type CloudShadow struct {
@@ -27,7 +27,7 @@ type CloudShadow struct {
 
 func NewCloudShadow(r *renderer.Renderer, noise *renderer.Texture) (*CloudShadow, error) {
 	target, err := r.CreateRenderTarget(renderer.RenderTargetDesc{
-		Name: "cloud sunlight optical depth", Format: renderer.TargetRGBA16F,
+		Name: "cloud sunlight transmittance", Format: renderer.TargetRGBA16F,
 		Width: cloudShadowResolution * 2, Height: cloudShadowResolution * 2,
 		Storage: true, Filter: renderer.FilterLinear,
 	})

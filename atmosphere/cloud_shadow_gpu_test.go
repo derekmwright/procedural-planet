@@ -14,7 +14,7 @@ import (
 )
 
 // Use the production integrator with a known homogeneous extinction. Its exact
-// integral is extinction * length, independent of its quadrature or storage.
+// transmission is exp(-extinction * length), independent of quadrature/storage.
 // Probe partial and complete paths through both shell lobes, the empty interior,
 // points above clouds, and atlas edges. A single ground-only shadow map cannot
 // pass the inside/above cases.
@@ -58,9 +58,10 @@ void main() {
     float expected=0.1*(clamp(outerZ-z,0.0,span)+clamp(-innerZ-z,0.0,span));
     vec3 p=planetData.cloudShadowU.xyz*xy.x+planetData.cloudShadowV.xyz*xy.y+cloudShadowSun()*z;
     float actual=cloudShadowCascade(field,p,cascade);
-    bool bad=abs(actual-expected)>max(0.003,expected*0.003)||isnan(actual)||isinf(actual);
+    expected=exp(-expected);
+    bool bad=abs(actual-expected)>0.003||isnan(actual)||isinf(actual);
     // The disabled contract must prevent stale field contents from leaking.
-    bad=bad||cloudShadowDepth(field,p)!=0.0;
+    bad=bad||cloudShadowVisibility(field,p)!=1.0;
     outColor=vec4(bad?1:0,1,0,1);
 }`
 	compile := func(name, source string) []byte {
@@ -90,6 +91,77 @@ void main() {
 	}
 }
 
+// Adjacent opaque and clear cloud columns must average their transmitted light.
+// Averaging optical depths first turns a half-covered footprint almost black
+// and imprints the projection grid on cloud-shadow boundaries.
+func TestCloudShadowFilteringGPU(t *testing.T) {
+	if os.Getenv("PLANET_GPU_TEST") != "1" {
+		t.Skip("set PLANET_GPU_TEST=1 for Vulkan shader checks")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	compute, err := os.ReadFile("cloud-shadow.comp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A constant extinction in each ray column gives exactly tau=16 or tau=0
+	// through a complete lobe, independently of its length and integration steps.
+	fixture := strings.Replace(string(compute), `#include "cloud-density.glsl"`, "#include \"cloud-density.glsl\"\n#define cloudDensity(p, detail, footprint) (((pixel.x+pixel.y)%2)==0?0.0:16.0/(cloud.layer.z*span))", 1)
+	source := `#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "parameters.glsl"
+#include "cloud-shadow-sample.glsl"
+layout(set=2,binding=0) uniform sampler2D field;
+layout(location=0) out vec4 outColor;
+void main() {
+    int cascade=int(gl_FragCoord.y)/32;
+    vec2 cell=vec2(120)+vec2(gl_FragCoord.x/32.0,mod(gl_FragCoord.y,32.0)/8.0);
+    vec2 uv=(cell+0.5)/float(textureSize(field,0).x/2);
+    vec2 xy=cloudShadowCenter(cascade)+(uv*2.0-1.0)*cloudShadowSpan(cascade);
+    vec2 height=cloudShadowHeights(xy);
+    vec3 tangent=planetData.cloudShadowU.xyz*xy.x+planetData.cloudShadowV.xyz*xy.y;
+    vec3 point=tangent+cloudShadowSun()*(height.x-0.1);
+    // Independent area-weighted sum of four column transmissions.
+    vec2 f=fract(cell);
+    float expected=0.0;
+    for(int y=0;y<2;y++) for(int x=0;x<2;x++) {
+        ivec2 column=ivec2(floor(cell))+ivec2(x,y);
+        float value=(column.x+column.y)%2==0?1.0:exp(-16.0);
+        expected+=value*(x==0?1.0-f.x:f.x)*(y==0?1.0-f.y:f.y);
+    }
+    float actual=cloudShadowCascade(field,point,cascade);
+    float above=cloudShadowCascade(field,tangent+cloudShadowSun()*(height.y+1.0),cascade);
+    bool bad=abs(actual-expected)>0.01||isnan(actual)||isinf(actual)||above!=1.0;
+    bad=bad||cloudShadowVisibility(field,point)!=1.0;
+    outColor=vec4(bad?1:0,1,0,1);
+}`
+	compile := func(name, source string) []byte {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if output, err := exec.Command("glslc", "-O", "--target-env=vulkan1.0", "-I.", path, "-o", path+".spv").CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, output)
+		}
+		code, err := os.ReadFile(path + ".spv")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return code
+	}
+	g := &cloudShadowProbe{cloudGeometryProbe: cloudGeometryProbe{t: t, code: compile("shadow-filter-probe.frag", source)}, compute: compile("shadow-filter-fixture.comp", fixture)}
+	e, err := glyph.New(g, glyph.WithTitle("Cloud shadow filtering regression"), glyph.WithWindowSize(256, 64), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithMaxFrames(4))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Destroy()
+	e.Run()
+	if !g.checked {
+		t.Fatal("cloud shadow filtering diagnostic not captured")
+	}
+}
+
 type cloudShadowProbe struct {
 	cloudGeometryProbe
 	compute []byte
@@ -103,7 +175,7 @@ func (g *cloudShadowProbe) Init(e *glyph.Engine) error {
 	if err := e.Renderer().SetShaderParameters(data[:]); err != nil {
 		return err
 	}
-	field, err := e.Renderer().CreateRenderTarget(renderer.RenderTargetDesc{Name: "shadow test optical depth", Format: renderer.TargetRGBA16F, Width: cloudShadowResolution * 2, Height: cloudShadowResolution * 2, Storage: true, Filter: renderer.FilterLinear})
+	field, err := e.Renderer().CreateRenderTarget(renderer.RenderTargetDesc{Name: "shadow test transmittance", Format: renderer.TargetRGBA16F, Width: cloudShadowResolution * 2, Height: cloudShadowResolution * 2, Storage: true, Filter: renderer.FilterLinear})
 	if err != nil {
 		return err
 	}

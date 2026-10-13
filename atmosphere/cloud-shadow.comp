@@ -19,7 +19,10 @@ void main() {
     vec2 xy=cloudShadowCenter(cascade)+(uv*2.0-1.0)*halfSpan;
     vec2 height=cloudShadowHeights(xy); // inner and outer shell intersections
     float span=height.y-height.x;
-    vec4 knots=vec4(0);
+    // Filter transmitted light across neighbouring rays. Filtering tau and
+    // then exponentiating makes an opaque/clear texel boundary almost black,
+    // exposing the light-space grid on grazing mountain slopes.
+    vec4 knots=vec4(1);
     if(span>0.0001&&cloud.layer.w>0.0) {
         vec3 sun=cloudShadowSun();
         vec3 tangent=planetData.cloudShadowU.xyz*xy.x+planetData.cloudShadowV.xyz*xy.y;
@@ -36,7 +39,7 @@ void main() {
                     tau+=cloudDensity(p,true,footprint)*cloud.layer.z*dt;
                 }
             }
-            knots[k]=min(tau,16.0);
+            knots[k]=exp(-min(tau,16.0));
         }
     }
     imageStore(cloudShadowField,pixel,knots);

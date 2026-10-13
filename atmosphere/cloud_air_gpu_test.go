@@ -30,7 +30,7 @@ func TestCloudAirShadowSamplingGPU(t *testing.T) {
 	}
 	// Replace only the external visibility field with an analytic fixture. The
 	// integration and sample placement remain the actual production shader.
-	needle := "return exp(-cloudShadowDepth(cloudShadowTexture,point));"
+	needle := "return cloudShadowVisibility(cloudShadowTexture,point);"
 	if strings.Count(string(common), needle) != 1 {
 		t.Fatal("cloud visibility fixture no longer matches the production interface")
 	}
