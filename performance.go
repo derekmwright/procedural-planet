@@ -33,6 +33,8 @@ type perfReport struct {
 	Clouds, CloudsActive                                                 bool
 	CloudShadows, CloudShadowsActive                                     bool
 	CloudScale, CloudCoverage                                            float64
+	Tonemap                                                              string
+	Exposure                                                             float32
 	CausticCache, WaveCache, WaterPasses, AtmosphereCache, ShoreFoam     bool
 	CausticTemporal                                                      bool
 	UploadsSkipped, TerrainUploadsWaiting                                int
@@ -187,6 +189,14 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	}
 	r.Width, r.Height = e.Window().GetFramebufferSize()
 	stats := e.Renderer().Stats()
+	var curve float32
+	r.Exposure, curve, _ = e.Renderer().Tonemap()
+	r.Tonemap = "linear"
+	if curve > 1.5 {
+		r.Tonemap = "filmic"
+	} else if curve > 0.5 {
+		r.Tonemap = "reinhard"
+	}
 	r.DepthPrepass = e.Renderer().Capabilities().DepthPrepass.String()
 	r.PrepassEstimate, r.PrepassCovered, r.PrepassDraws = stats.PrepassEstimate, stats.PrepassCovered, stats.PrepassDraws
 	r.PipelineStatsEnabled = e.Renderer().PipelineStatsSupported()

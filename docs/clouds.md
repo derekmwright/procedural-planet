@@ -21,6 +21,10 @@ terrain, water and atmospheric haze.
 .\bin\universebuild.exe -clouds=false
 # Keep visible clouds but disable their cast shadows
 .\bin\universebuild.exe -cloud-shadows=false
+# Compare the original display response, including clipped highlights
+.\bin\universebuild.exe -tonemap=linear
+# Adjust fixed exposure without changing the cloud density or sunlight
+.\bin\universebuild.exe -exposure=0.8
 ```
 
 `-cloud-scale` accepts 0.25, 0.5 (default), or 1. Coverage defaults to 0.52.
@@ -28,6 +32,16 @@ The layer lies 2.2–5.2 km above the configured sea level and rotates around th
 polar axis at about 15 m/s at the equator. It uses the continuous simulation
 clock, not the short looping water clock. `-air-passes=false` disables clouds
 as well; that option retains the inline clear-air reference.
+
+The default `-tonemap=filmic` uses the engine's ACES display curve at fixed
+`-exposure=1`. It rolls off bright cloud rims after the complete HDR scene has
+been composed, preserving shading that the previous linear resolve clipped to
+white. It also changes terrain, sky and water contrast, including when clouds
+are disabled. `-tonemap=linear -exposure=1` restores the original display
+response. Exposure is a positive multiplier up to 16, with no automatic
+adaptation. Caustic debug views retain the original linear response at exposure
+1 so their intensity scale remains meaningful. UI is composited after tone
+mapping. This uses the existing engine resolve, adding no passes or targets.
 
 The earlier screen-space sun shafts do not run in cloud mode: they execute
 before cloud composition and have no cloud visibility. Physical view scattering
@@ -166,6 +180,50 @@ comparison script are under `captures/shadow-bands`.
 
 ## Performance and validation
 
+### Display highlight rolloff (2026-10-16)
+
+The identity display resolve clipped HDR cloud rims even though their radiance
+was preserved in the half-float cloud and scene targets. The default now selects
+the engine's existing ACES curve at exposure 1. Cloud density, scattering,
+self-shadowing and view sampling are unchanged; the curve is applied once to
+the complete scene, after HDR composition. It adds no passes or texture memory.
+
+Matched seed-7, frame-601 captures at 1600×900 show the following percentages
+of pixels with at least one output RGB channel equal to 255:
+
+| View | Original linear resolve | Filmic resolve |
+| --- | ---: | ---: |
+| Ground | 0.6101% | 0.0000% |
+| Coast | 5.1816% | 0.0169% |
+| Cloud horizon | 7.2305% | 0.0281% |
+| Above cloud layer | 2.4083% | 0.0000% |
+
+These are display saturation measurements over the full image, not cloud-only
+error estimates. Sun cores may still saturate. Ground, coast, mountains, cloud
+horizon, inside/above-layer, orbital, night and underwater captures passed
+Vulkan validation and were visually checked. Evidence is under the ignored
+`captures/cloud-lighting` directory.
+
+The final `-tonemap=linear -exposure=1` coast capture is pixel-identical to the
+pre-change reference. Caustic debug captures are also identical when launched
+with either display curve (including a non-default requested exposure), and
+their profiles report the effective linear curve at exposure 1. Invalid curve
+names and non-positive, non-finite or unrepresentable exposure values are
+rejected before renderer startup. Go tests and vet pass.
+
+Use `tools/capture_clouds.py --tonemap linear` for the old display response.
+JSONL profiles now record `Tonemap` and `Exposure`; `tools/profile_scene.py`
+offers `clouds-linear` and `clouds-filmic` for matched comparisons. The initial
+alternating 4K timing run had competing GPU work and large baseline variation,
+so it is not evidence of a performance improvement or regression. Repeat it
+on an otherwise idle GPU before assigning a cost to the curve:
+
+```powershell
+python tools/profile_scene.py --scenes ground coast cloud-horizon --variants clouds-linear clouds-filmic --repeats 2 --warmup 720
+```
+
+### Cloud rendering costs
+
 The HUD/JSONL report `cloud volume`, `cloud composite`, `cloud shadows` and shared
 `air present` GPU times, plus requested/active cloud and cloud-shadow modes,
 coverage and scale. Before cast shadows were added, on the
@@ -240,7 +298,8 @@ percentile 1/255); sparse silhouette differences remain from reconstruction.
 - Ocean reflections and the refracted sky seen from underwater remain clear-air
   views. The cloud view pass is disabled underwater to preserve water composition.
 - The single fixed layer has fairly soft, broad formations. Sun-facing edges can
-  be very bright, and spatial sampling grain can remain in thin clouds,
+  still be bright after the filmic highlight rolloff, and spatial sampling grain
+  can remain in thin clouds,
   especially at quarter resolution.
   Thin silhouettes use the existing clear-air reconstruction
   fallback when no depth-compatible cloud sample exists. Density shaping,

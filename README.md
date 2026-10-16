@@ -44,6 +44,11 @@ For development, `go run .` also works. The executable retains its original
 Shader changes require `glslc` from the Vulkan SDK and `go generate ./atmosphere`.
 Run `go test ./...` and `go vet ./...` to check the Go code.
 
+The default filmic tone map preserves detail in bright cloud rims.
+`-tonemap=linear -exposure=1` restores the original display response;
+`-exposure=0.8` lowers the fixed exposure without changing world lighting.
+The curve applies to the whole scene, including water and clear skies.
+
 The adaptive opaque depth prepass is enabled by default. Use
 `-depth-prepass=off` for a baseline or `-depth-prepass=on` to force it during
 profiling. `-pipeline-stats` adds optional GPU fragment/primitive counters to

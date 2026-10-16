@@ -29,6 +29,7 @@ type game struct {
 	cloudsEnabled                                bool
 	cloudShadows                                 bool
 	cloudScale, cloudCoverage                    float64
+	tonemapCurve, exposure                       float32
 	shoreFoam                                    bool
 	asyncTerrainUploads                          bool
 	waveCache                                    *atmosphere.WaveCache
@@ -81,6 +82,13 @@ func (g *game) Init(e *glyph.Engine) error {
 		return err
 	}
 	e.Renderer().SetBloom(0, 1, 0.5, 1)
+	// Map the composed HDR scene once, after air, clouds and water. Leaving
+	// the resolve linear clipped sunlit cloud detail to a flat white rim.
+	e.Renderer().SetTonemap(g.exposure, g.tonemapCurve, 4)
+	if g.causticsDebug {
+		// Preserve the diagnostic's calibrated neutral gray and intensity scale.
+		e.Renderer().SetTonemap(1, 0, 4)
+	}
 	g.terrain = newTerrain(g.world, g.syncTerrain)
 	g.terrain.asyncUploads = g.asyncTerrainUploads
 	if err := g.terrain.init(e); err != nil {
@@ -424,7 +432,20 @@ func run() error {
 	cloudScale := flag.Float64("cloud-scale", 0.5, "cloud resolution scale: 0.25, 0.5, or 1")
 	cloudCoverage := flag.Float64("cloud-coverage", 0.52, "cloud coverage from 0 (clear) to 1 (overcast)")
 	cloudShadows := flag.Bool("cloud-shadows", true, "cloud shadows on terrain, water and air")
+	tonemap := flag.String("tonemap", "filmic", "HDR display curve: filmic (ACES) or linear (original look)")
+	exposure := flag.Float64("exposure", 1, "fixed scene exposure multiplier, greater than 0 and at most 16")
 	flag.Parse()
+	var tonemapCurve float32
+	switch *tonemap {
+	case "filmic":
+		tonemapCurve = 2 // GlyphEngine's ACES filmic resolve.
+	case "linear":
+	default:
+		return fmt.Errorf("tonemap must be filmic or linear")
+	}
+	if math.IsNaN(*exposure) || math.IsInf(*exposure, 0) || *exposure <= 0 || *exposure > 16 || float32(*exposure) == 0 {
+		return fmt.Errorf("exposure must be greater than 0 and at most 16")
+	}
 	if *cloudScale != 0.25 && *cloudScale != 0.5 && *cloudScale != 1 {
 		return fmt.Errorf("cloud-scale must be 0.25, 0.5, or 1")
 	}
@@ -551,6 +572,7 @@ func run() error {
 	g.deferredAir, g.airScale = *deferredAir, *airScale
 	g.cloudsEnabled, g.cloudScale, g.cloudCoverage = *clouds, *cloudScale, *cloudCoverage
 	g.cloudShadows = *cloudShadows
+	g.tonemapCurve, g.exposure = tonemapCurve, float32(*exposure)
 	g.asyncTerrainUploads = *asyncTerrainUploads
 	e, err := glyph.New(g, opts...)
 	if g.terrain != nil {

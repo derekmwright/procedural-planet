@@ -30,6 +30,8 @@ def main():
     parser.add_argument("--frames", type=int, default=601)
     parser.add_argument("--scale", type=float, default=0.5)
     parser.add_argument("--coverage", type=float, default=0.52)
+    parser.add_argument("--tonemap", choices=["filmic", "linear"], default="filmic")
+    parser.add_argument("--exposure", type=float, default=1)
     parser.add_argument("--off", action="store_true")
     parser.add_argument("--no-shadows", action="store_true", help="cloud-shadow ablation; keep the visible clouds")
     parser.add_argument("--no-rays", action="store_true", help="disable the extra screen-space shafts in clear-air comparisons")
@@ -39,6 +41,7 @@ def main():
         command = [str(ROOT / "bin/universebuild.exe"), "-seed=7", f"-width={args.width}", f"-height={args.height}",
                    f"-frames={args.frames}", "-sync-terrain", "-vsync=false", "-hud=false", "-validate",
                    f"-clouds={str(not args.off).lower()}", f"-cloud-scale={args.scale}", f"-cloud-coverage={args.coverage}",
+                   f"-tonemap={args.tonemap}", f"-exposure={args.exposure}",
                    "-profile-frame-step=120", f"-profile={args.output / (name + '.jsonl')}",
                    f"-screenshot={args.output / (name + '.png')}", *SCENES[name]]
         if args.no_rays:
