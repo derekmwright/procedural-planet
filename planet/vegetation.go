@@ -20,9 +20,11 @@ func (p Planet) GroundCover(d, normal Vec) (float64, [3]float32) {
 	cover := band(8, 65, h) * (1 - band(p.Vegetation.MaxHeight*0.60, p.Vegetation.MaxHeight, h))
 	cover *= 1 - band(p.Vegetation.MaxSlope*0.65, p.Vegetation.MaxSlope, slope)
 	cover *= band(-0.75, 0.1, patches+moisture*0.5)
-	green := [3]float64{0.045, 0.16, 0.032}
-	gold := [3]float64{0.38, 0.29, 0.065}
-	olive := [3]float64{0.15, 0.19, 0.05}
+	// Linear albedo shared by the terrain and blades. Muted green, dry straw
+	// and olive keep sunlit cover from turning lime or saturated yellow.
+	green := [3]float64{0.075, 0.135, 0.060}
+	gold := [3]float64{0.290, 0.250, 0.135}
+	olive := [3]float64{0.145, 0.165, 0.085}
 	upland := band(500, p.Vegetation.MaxHeight, h) * 0.7
 	var color [3]float32
 	for i := range color {

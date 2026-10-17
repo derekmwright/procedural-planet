@@ -10,6 +10,8 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENES = {
+    "meadow": ["-longitude=-45", "-latitude=-13", "-altitude=2", "-flight", "-heading=16.73", "-pitch=-5"],
+    "dry-grass": ["-longitude=20.0015", "-latitude=12.6048", "-sea-level=0", "-altitude=2", "-flight", "-heading=16.73", "-pitch=-5", "-ocean=false"],
     "ground": ["-longitude=20.0015", "-latitude=12.6048", "-altitude=2", "-flight", "-heading=16.73", "-pitch=12", "-ocean=false"],
     "mountains": ["-longitude=60", "-latitude=12.6", "-altitude=900", "-flight", "-heading=-72", "-pitch=6"],
     "coast": ["-sea-level=137.3", "-altitude=20", "-flight", "-heading=-72", "-pitch=8"],

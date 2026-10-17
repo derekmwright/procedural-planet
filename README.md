@@ -460,7 +460,7 @@ or measured power/fan speed. Timing logs and captures are in
 
 ### Vegetation from orbit to the ground
 
-Seeded moisture regions blend green lowlands, olive uplands, and golden dry
+Seeded moisture regions blend muted green lowlands, olive uplands, and dry straw
 areas into the existing soil/rock colors. Both terrain vertex color and grass
 placement call the same `Planet.GroundCover` rules. Coverage fades in between
 8 and 65 m above sea level, fades out near the configured elevation ceiling,
@@ -479,8 +479,8 @@ capacity. Grass materials and placement are showcase code; instancing, buffers,
 render pipelines, culling, and draw submission come from GlyphEngine.
 
 ```powershell
-# Green meadow with distant mountains
-.\bin\universebuild.exe -longitude -45 -latitude -13 -altitude 2
+# Green meadow with distant mountains, at the clearer lighting reference
+.\bin\universebuild.exe -longitude -45 -latitude -13 -altitude 2 -exposure 0.5 -haze 0.25
 
 # Tunable vegetation band and blade density
 .\bin\universebuild.exe -grass-height-max 2200 -grass-slope-max 32 -grass-density 0.7
