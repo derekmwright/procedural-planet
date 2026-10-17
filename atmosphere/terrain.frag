@@ -58,8 +58,9 @@ void main() {
     surfaceMaterial(base,N);
     vec3 sunDir=normalize(pc.sunDir.xyz);
     vec3 point=EYE_PLANET+fragWorldPos*0.001;
-    vec3 directTransmission=ATM_ENABLED?sunlight(point,sunDir):vec3(1.0);
-    directTransmission*=cloudSunVisibility(point);
+    vec3 clearSun=ATM_ENABLED?sunlight(point,sunDir):vec3(1.0);
+    float cloudVisibility=cloudSunVisibility(point);
+    vec3 directTransmission=clearSun*cloudVisibility;
     float waterDepth=max(planetData.water.x-length(point),0.0)*1000.0;
     // Evaluate nearby depths in camera-relative meters. Subtracting two
     // planet-sized floats per pixel quantizes the projected caustic pattern.
@@ -100,7 +101,8 @@ void main() {
     if(waterDepth>0.0) irradiance*=smoothstep(0.0,0.08,dot(normalize(point),sunDir));
     irradiance*=exp(-WATER_ABSORPTION*waterDepth/max(dot(normalize(point),lightDir),0.1));
     if(waterDepth>0.0) irradiance*=seabedCaustics(fragWorldPos,point,waterDepth);
-    vec3 ambient=pc.ambient.rgb;
+    vec3 ambient=pc.ambient.rgb
+        +cloudDiffuseIrradiance(point,N,sunDir,pc.sunColor.rgb*clearSun,cloudVisibility);
     if (ATM_ENABLED) {
         float localDay=smoothstep(-0.12,0.25,dot(normalize(point),sunDir));
         float height=max(length(point)-PLANET_RADIUS,0.0);

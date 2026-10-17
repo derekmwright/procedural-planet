@@ -223,6 +223,21 @@ float cloudSunVisibility(vec3 point) {
 float cloudSunVisibility(vec3 point) { return 1.0; }
 #endif
 
+// Approximate diffuse transmission through a scattering cloud separately from
+// the unscattered beam. A bounded transport attenuation falls more slowly than
+// exp(-tau); subtracting the beam keeps their combined energy at most the clear
+// horizontal irradiance. This is a surface-lighting approximation, not a new
+// visibility floor for specular highlights, caustics, shafts, or the sun disc.
+vec3 cloudDiffuseIrradiance(vec3 point,vec3 normal,vec3 sun,vec3 clearSun,float visibility) {
+    if(!ATM_ENABLED||planetData.cloudShadowMeta.w<=0.0) return vec3(0);
+    float beam=clamp(visibility,0.0,1.0);
+    float tau=-log(max(beam,0.0000001));
+    float diffuse=max(1.0/(1.0+0.18*tau)-beam,0.0);
+    vec3 up=normalize(point);
+    float skyHemisphere=clamp(0.5+0.5*dot(normal,up),0.0,1.0);
+    return clearSun*(diffuse*max(dot(up,sun),0.0)*skyHemisphere);
+}
+
 // Static stratified jitter decorrelates shadow boundaries between pixels.
 // Fixed midpoint samples otherwise align into visible bands across the sky.
 // No frame-time seed: a stationary camera must not shimmer.

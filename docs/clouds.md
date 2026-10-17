@@ -59,10 +59,13 @@ The cloud composite stores direct solar luminance in its otherwise unused alpha
 channel. Terrain depth, the solid planet and analytic ocean reject the source;
 RGB cloud/air transmission attenuates it. The existing present pass averages 32
 fixed samples over the visible disc and applies a bounded angular glare profile.
-The corona stays close to the disc. Six soft spokes start broad at its rim and
-narrow toward their tips; their width is measured across each ray rather than
-as a fixed azimuth, which would widen into a V with distance. The previous broad
-halo tail is removed so the optical effect does not bleach a large patch of sky.
+The corona stays close to the disc. Four faint diffraction axes have unequal
+widths and decay lengths, blending into the corona instead of forming a bright
+six-point silhouette against dark high-altitude sky. Their cross-sections narrow
+away from the disc; a fixed azimuth would widen into a V with distance. The
+previous broad halo tail is removed so the optical effect does not bleach a
+large patch of sky. The `sun-high` capture pose checks the high-contrast case
+alongside the hazier coastal `sun-burst` view.
 This is an optical display effect, separate from volumetric scattering. Bright
 cloud rims and water reflections cannot create a false sun burst. Partial disc
 occlusion fades its strength; a fully hidden sun produces none. Source hue is
@@ -151,9 +154,35 @@ layer heights and wind parameters are identical to those of the visible clouds.
 
 Terrain, ocean glints, foam, seabed sunlight and caustics receive this visibility.
 Air scattering samples it along the view ray; underwater shafts use one sample
-along their short integration path. Ambient lighting remains unchanged. The
-visible clouds retain their existing sunlight march for self-shadowing, avoiding
-applying the cached extinction twice to cloud lighting.
+along their short integration path. The visible clouds retain their existing
+sunlight march for self-shadowing, avoiding applying the cached extinction twice
+to cloud lighting.
+
+Surface lighting also approximates diffuse light transmitted through clouds.
+Previously, blocking the direct beam left only the small clear-sky ambient term,
+making overcast terrain almost black. For beam transmission `T`, the diffuse
+fraction is `1 / (1 + 0.18 * tau) - T`, where `tau = -log(T)` with a numerical
+floor at `1e-7`. It uses the clear atmospheric sunlight, local sun elevation and
+the surface's exposure to the upper hemisphere. Direct plus diffuse transmission
+on a horizontal surface stays at or below the clear-sky value. Thicker clouds
+still transmit less total light, and the added term vanishes at night, in clear
+sunlight, above the cloud layer, or when cloud shadows/atmosphere are disabled.
+Terrain, rocks, foliage, seabed diffuse lighting and shoreline foam share it;
+underwater diffuse attenuation still applies. It does not brighten direct glints,
+caustics, sun glare or volumetric rays through opaque clouds.
+
+This is a bounded surface multiple-scattering approximation, not a hemispherical
+sky integration or a full cloud transport solve. It uses the existing shadow
+lookup and adds no textures, passes or cloud ray marches. The `cloud-shade` pose
+and `ground` at `--coverage 0.8` exercise shaded terrain in capture checks.
+
+Matched 1280×720, fixed-frame captures in `captures/cloud-light-balance` show
+the overcast ground lift while the clear-sun `ground` and `night` views remain
+pixel-identical. High-altitude and coastal sun views, low-sun foothills and an
+overcast underwater view were inspected. The cloud-shadow optical-depth and
+filtering tests, air-shadow sampling, cloud/water lifecycle and sun-occlusion GPU
+checks pass with synchronization validation. GPU timing comparisons are deferred
+while another workload shares the device.
 
 Clear-air integration averages joint terrain and cloud visibility at the same
 stratified positions within each interval. Sampling cloud shadows only at the

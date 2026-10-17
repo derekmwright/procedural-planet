@@ -23,6 +23,8 @@ SCENES = {
     "water-distance": ["-sea-level=137.3", "-altitude=220", "-flight", "-heading=-72", "-pitch=-28"],
     "sun-ridge": ["-longitude=54", "-latitude=0", "-altitude=100", "-flight", "-heading=-63.2", "-pitch=-4.58"],
     "sun-burst": ["-sea-level=137.3", "-altitude=20", "-flight", "-heading=-66.5", "-pitch=34"],
+    "sun-high": ["-altitude=8300", "-flight", "-heading=-66.5", "-pitch=34"],
+    "cloud-shade": ["-longitude=45", "-latitude=12.6", "-altitude=300", "-flight", "-heading=45", "-pitch=-12"],
 }
 
 def main():

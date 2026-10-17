@@ -178,8 +178,9 @@ vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaque
     float variance=unresolvedVariance+0.5*(dot(nx,nx)+dot(ny,ny));
     float specPower=2.0/(2.0/320.0+variance);
     float spec=pow(max(dot(normal,halfVector/max(length(halfVector),0.000001)),0.0),specPower)*(specPower/320.0);
-    vec3 direct=(ATM_ENABLED?sunlight(position+radial*0.001,sun):vec3(1.0))
-        *localShadow(direction*(surfaceDistance*1000.0),radial)*cloudSunVisibility(position);
+    vec3 clearSun=ATM_ENABLED?sunlight(position+radial*0.001,sun):vec3(1.0);
+    float cloudVisibility=cloudSunVisibility(position);
+    vec3 direct=clearSun*localShadow(direction*(surfaceDistance*1000.0),radial)*cloudVisibility;
     vec3 water=mix(bed,skyColor,fresnel)+pc.sunColor.rgb*direct*spec*0.65;
     if(planetData.features.z>0.5) {
         // Convert optical travel to radial bed depth: a grazing view must
@@ -188,7 +189,8 @@ vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaque
         float bedDepth=max(-along-(travel*travel-along*along)/(2.0*radius*1000.0),0.0);
         if(bedDepth<1.6&&travel<150.0) {
             float coverage=shoreFoamCoverage(local,bedDepth,footprint)*(1.0-smoothstep(100.0,150.0,travel));
-            vec3 foam=vec3(0.82,0.87,0.84)*(pc.sunColor.rgb*direct*max(dot(radial,sun),0.0)*0.5+vec3(0.12)*day+0.004);
+            vec3 diffuse=cloudDiffuseIrradiance(position,radial,sun,pc.sunColor.rgb*clearSun,cloudVisibility);
+            vec3 foam=vec3(0.82,0.87,0.84)*((pc.sunColor.rgb*direct*max(dot(radial,sun),0.0)+diffuse)*0.5+vec3(0.12)*day+0.004);
             water=mix(water,foam,coverage);
         }
     }
