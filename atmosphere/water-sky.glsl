@@ -3,8 +3,8 @@ layout(set=1,binding=13) uniform sampler2D waterSkyTransmission;
 #include "water-sky-coordinates.glsl"
 
 Air waterSkyLevel(vec3 direction,int level) {
-    vec2 uv=waterSkyUV(direction,level,WATER_SKY_ATLAS);
-    return Air(textureLod(waterSkyLight,uv,0).rgb,textureLod(waterSkyTransmission,uv,0).rgb);
+    return Air(waterSkySample(waterSkyLight,direction,level).rgb,
+        waterSkySample(waterSkyTransmission,direction,level).rgb);
 }
 Air waterSky(vec3 position,vec3 direction,vec3 sun,vec3 color,float variance) {
     float coverage=planetData.waterRendering.x*(1.0-smoothstep(8.0,32.0,distance(position,waterSkyOrigin())));

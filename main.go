@@ -30,6 +30,7 @@ type game struct {
 	cloudShadows                                 bool
 	cloudScale, cloudCoverage                    float64
 	tonemapCurve, exposure                       float32
+	haze, startHaze, startExposure                float32
 	shoreFoam                                    bool
 	asyncTerrainUploads                          bool
 	waveCache                                    *atmosphere.WaveCache
@@ -201,6 +202,9 @@ func (g *game) camera(e *glyph.Engine) {
 	g.performance.grassMS = milliseconds(grassStart)
 	e.SetCamera(mgl32.Vec3{}, vec(g.cam.forward), vec(g.cam.up))
 	parameters := atmosphere.FrameParameters(g.world.Radius, [3]float64(g.cam.eye), g.atmosphereEnabled)
+	// Aerosol concentration changes both extinction and in-scattering. Keep
+	// molecular Rayleigh scattering, cloud density and material albedo intact.
+	parameters.Mie[0] *= g.haze
 	if g.shoreFoam && g.oceanEnabled {
 		parameters.Features[2] = 1
 	}
@@ -273,7 +277,7 @@ func (g *game) camera(e *glyph.Engine) {
 		}
 	}
 	if g.waterLand != nil {
-		g.waterLand.SetEnabled(parameters, e.ViewProjection().Inv(), g.oceanEnabled && !g.causticsDebug)
+		g.waterLand.SetEnabled(parameters, e.ViewProjection().Inv(), g.waterLandReflections && g.oceanEnabled && !g.causticsDebug)
 	}
 	data := parameters.Bytes()
 	if err := e.Renderer().SetShaderParameters(data[:]); err != nil {
@@ -299,6 +303,7 @@ func (g *game) Update(e *glyph.Engine, dt float32) {
 	updateStart := time.Now()
 	defer func() { g.performance.sample(g, e, updateStart) }()
 	in := e.Input()
+	g.visualControls(e)
 	if in.KeyPressed(input.KeyP) {
 		g.performance.enabled = !g.performance.enabled
 	}
@@ -380,7 +385,8 @@ func (g *game) Update(e *glyph.Engine, dt float32) {
 		rays = "on"
 	}
 	e.Debugf("Shift: faster | Tab: camera | F: atmosphere %s | R: sun rays %s | Home: reset | Esc: quit", air, rays)
-	e.Debugf("C: clouds %t | coverage %.0f%% | resolution %.0f%%", g.cloudsEnabled, g.cloudCoverage*100, g.cloudScale*100)
+	e.Debugf("C: clouds %t | coverage %.0f%% | resolution %.0f%% | V: land reflections %t", g.cloudsEnabled, g.cloudCoverage*100, g.cloudScale*100, g.waterLandReflections)
+	e.Debugf("[/]: exposure %.2f | ,/.: haze %.2f | Backslash: reset lighting | F1: hide HUD", g.exposure, g.haze)
 	g.performance.draw(e)
 }
 func (g *game) LateUpdate(e *glyph.Engine, _ float32) {
@@ -435,7 +441,7 @@ func run() error {
 	syncTerrain := flag.Bool("sync-terrain", false, "build terrain synchronously for repeatable validation runs")
 	tour := flag.Bool("tour", false, "58-second scripted descent, surface hold, and ascent")
 	perf := flag.Bool("perf", true, "show rolling CPU/GPU performance HUD (P toggles)")
-	hud := flag.Bool("hud", true, "show debug text; disable for clean captures and geometry statistics")
+	hud := flag.Bool("hud", true, "show debug text (F1 toggles all text; P toggles performance)")
 	profile := flag.String("profile", "", "append rolling 120-frame performance reports to a JSONL file")
 	profileFrameStep := flag.Int("profile-frame-step", 0, "record every N rendered frames (0: once per second; 120: non-overlapping windows)")
 	vsync := flag.Bool("vsync", true, "enable display frame pacing")
@@ -477,6 +483,7 @@ func run() error {
 	cloudShadows := flag.Bool("cloud-shadows", true, "cloud shadows on terrain, water and air")
 	tonemap := flag.String("tonemap", "filmic", "HDR display curve: filmic (ACES) or linear (original look)")
 	exposure := flag.Float64("exposure", 1, "fixed scene exposure multiplier, greater than 0 and at most 16")
+	haze := flag.Float64("haze", 1, "aerosol concentration from 0 to 4 (comma/period adjust; leaves Rayleigh scattering and clouds intact)")
 	flag.Parse()
 	var tonemapCurve float32
 	switch *tonemap {
@@ -488,6 +495,9 @@ func run() error {
 	}
 	if math.IsNaN(*exposure) || math.IsInf(*exposure, 0) || *exposure <= 0 || *exposure > 16 || float32(*exposure) == 0 {
 		return fmt.Errorf("exposure must be greater than 0 and at most 16")
+	}
+	if math.IsNaN(*haze) || math.IsInf(*haze, 0) || *haze < 0 || *haze > 4 {
+		return fmt.Errorf("haze must be finite and between 0 and 4")
 	}
 	if *cloudScale != 0.25 && *cloudScale != 0.5 && *cloudScale != 1 {
 		return fmt.Errorf("cloud-scale must be 0.25, 0.5, or 1")
@@ -618,6 +628,7 @@ func run() error {
 	g.cloudsEnabled, g.cloudScale, g.cloudCoverage = *clouds, *cloudScale, *cloudCoverage
 	g.cloudShadows = *cloudShadows
 	g.tonemapCurve, g.exposure = tonemapCurve, float32(*exposure)
+	g.haze, g.startHaze, g.startExposure = float32(*haze), float32(*haze), g.exposure
 	g.asyncTerrainUploads = *asyncTerrainUploads
 	e, err := glyph.New(g, opts...)
 	if g.terrain != nil {

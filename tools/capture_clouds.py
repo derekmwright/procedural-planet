@@ -25,6 +25,7 @@ SCENES = {
     "water-mountain": ["-longitude=47.2", "-latitude=12.6", "-sea-level=1000", "-altitude=400", "-flight", "-heading=90", "-pitch=-3"],
     "water-shore": ["-longitude=47.2", "-latitude=12.6", "-sea-level=1000", "-altitude=286", "-flight", "-heading=90", "-pitch=-3"],
     "water-cliff": ["-longitude=47.68", "-latitude=12.6", "-sea-level=1000", "-altitude=5", "-flight", "-heading=0", "-pitch=4"],
+    "water-sunset": ["-longitude=47.2", "-latitude=12.6", "-sea-level=1000", "-altitude=400", "-flight", "-heading=-72", "-pitch=-8"],
     "sun-ridge": ["-longitude=54", "-latitude=0", "-altitude=100", "-flight", "-heading=-63.2", "-pitch=-4.58"],
     "sun-burst": ["-sea-level=137.3", "-altitude=20", "-flight", "-heading=-66.5", "-pitch=34"],
     "sun-high": ["-altitude=8300", "-flight", "-heading=-66.5", "-pitch=34"],
@@ -42,6 +43,9 @@ def main():
     parser.add_argument("--coverage", type=float, default=0.52)
     parser.add_argument("--tonemap", choices=["filmic", "linear"], default="filmic")
     parser.add_argument("--exposure", type=float, default=1)
+    parser.add_argument("--haze", type=float, default=1)
+    parser.add_argument("--no-atmosphere", action="store_true")
+    parser.add_argument("--no-materials", action="store_true")
     parser.add_argument("--off", action="store_true")
     parser.add_argument("--no-shadows", action="store_true", help="cloud-shadow ablation; keep the visible clouds")
     parser.add_argument("--no-rays", action="store_true", help="disable sun glare, clear-air screen-space shafts, and underwater shafts")
@@ -55,10 +59,15 @@ def main():
                    f"-frames={args.frames}", "-sync-terrain", "-vsync=false", "-hud=false", "-validate",
                    f"-clouds={str(not args.off).lower()}", f"-cloud-scale={args.scale}", f"-cloud-coverage={args.coverage}",
                    f"-tonemap={args.tonemap}", f"-exposure={args.exposure}",
+                   f"-haze={args.haze}",
                    "-profile-frame-step=120", f"-profile={args.output / (name + '.jsonl')}",
                    f"-screenshot={args.output / (name + '.png')}", *SCENES[name]]
         if args.no_rays:
             command.append("-sun-rays=false")
+        if args.no_atmosphere:
+            command.append("-atmosphere=false")
+        if args.no_materials:
+            command.append("-materials=false")
         if args.no_shadows:
             command.append("-cloud-shadows=false")
         if args.no_reflections:

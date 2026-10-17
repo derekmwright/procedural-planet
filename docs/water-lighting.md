@@ -6,6 +6,9 @@
 visible terrain and rocks to the existing sky/cloud reflection. Use
 `-water-land-reflections=false` for a matched comparison; the separate
 `-water-reflections` flag still controls the sky cache.
+**V** toggles the land pass in place if it was created at launch, preserving
+sky/cloud reflections. This isolates distant reflection artifacts without
+moving the camera or changing the lighting.
 
 A half-resolution pass traces the reflected wave direction through current
 opaque scene depth, with at most 64 perspective-correct steps and 12 hit
@@ -89,6 +92,26 @@ Six four-tap reduction passes provide roughness levels. All of this happens
 before scene shading, after the sunlight and cloud-shadow fields are ready.
 The cache also supplies the refracted sky seen through the underwater window.
 
+Sky-atlas reads reconstruct a common footprint across face boundaries at every
+roughness level. Within the last half texel, neighbouring face interiors blend
+with continuous weights; corners include all three faces. Independent gutter
+samples are excluded. The reduction passes use the same reconstruction. This
+fixes angular wedges in reflected clouds: the old lookup switched abruptly
+between independently integrated/filtered faces, especially at coarse levels.
+The correction adds no targets or passes and preserves the existing wave
+roughness and cloud field. **V** cannot remove this artifact because it disables
+only the separate land reflection.
+
+`TestWaterSkySeamsGPU` checks radiance and transmission across all 12 cube edges
+and 8 corners at all seven levels using the generated cloud cache. The old
+radiance lookup failed at every level; the corrected lookup has no discontinuity
+failures, while a raw-gutter negative control still detects the old seam.
+Matched `water-sunset` captures reproduce the diagonal break with land
+reflections either on or off and remove it with this correction. Captures are
+under `captures/reflection-wedges-sunset*` and `captures/reflection-seams-fixed`;
+the latter also checks shoreline and underwater-window views. Timing comparisons
+remain deferred while other workloads share the GPU.
+
 For a water receiver away from the probe, its reflected ray intersects a curved
 shell 3.4 km above sea level and is reprojected to the probe. This is an
 approximation to a thick cloud volume, not exact spatial reflection. Cached
@@ -157,7 +180,7 @@ view across cloud/atmosphere toggles and target recreation:
 ```powershell
 $env:PLANET_GPU_TEST='1'
 $env:GLYPHENGINE_SYNC_VALIDATION='1'
-go test ./atmosphere -run 'TestWaveFilteringGPU|TestWaterSkyLifecycleGPU' -count=1
+go test ./atmosphere -run 'TestWaveFilteringGPU|TestWaterSkyLifecycleGPU|TestWaterSkySeamsGPU' -count=1
 ```
 
 ## Underwater cast-shadow mode (2026-10-07)

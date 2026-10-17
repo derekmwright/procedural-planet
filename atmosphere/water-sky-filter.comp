@@ -22,14 +22,14 @@ void main() {
     }
     vec3 light=vec3(0),transmit=vec3(0); float total=0.0;
     // Four taps from the previous level; no long serial loops for coarse mips.
-    // Sampling by direction includes neighbouring cube faces in the gutters.
+    // Use the same continuous face reconstruction as the water shader, so
+    // independently marched gutters cannot propagate seams into coarse mips.
     for(int y=0;y<2;y++) for(int x=0;x<2;x++) {
         vec2 p=(vec2(local*2+ivec2(x,y))+0.5)/float(waterSkySize(level-1))*2.0-1.0;
         vec3 dir=waterSkyDirection(face,p);
-        vec2 uv=waterSkyUV(dir,level-1,textureSize(sourceLight,0));
         float weight=pow(1.0+dot(p,p),-1.5);
-        light+=textureLod(sourceLight,uv,0).rgb*weight;
-        transmit+=textureLod(sourceTransmission,uv,0).rgb*weight;
+        light+=waterSkySample(sourceLight,dir,level-1).rgb*weight;
+        transmit+=waterSkySample(sourceTransmission,dir,level-1).rgb*weight;
         total+=weight;
     }
     imageStore(filteredLight,pixel,vec4(light/total,1));

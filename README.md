@@ -101,9 +101,23 @@ there is no need to press Tab before moving. **Shift** boosts movement speed.
 | M | Toggle surface material detail | Toggle surface material detail |
 | O | Toggle sea-level water | Toggle sea-level water |
 | G | Toggle nearby grass blades | Toggle nearby grass blades |
+| F1 | Toggle all debug text | Toggle all debug text |
 | P | Toggle performance HUD | Toggle performance HUD |
+| [ / ] | Lower / raise exposure | Lower / raise exposure |
+| , / . | Lower / raise aerosol haze | Lower / raise aerosol haze |
+| Backslash | Restore launch exposure / haze | Restore launch exposure / haze |
+| V | Toggle land reflections in water | Toggle land reflections in water |
 | F8 | Log performance marker | Log performance marker |
 | Escape | Quit | Quit |
+
+Exposure changes by one third of a stop per key press; haze changes by 0.25.
+`-exposure` and `-haze` set the launch values (both default to 1). Haze controls
+aerosol scattering and extinction, including the broad solar halo, while keeping
+the blue Rayleigh sky and cloud density. **R** controls the separate optical burst
+and extra shafts. **M** controls foreground detail, which fades out by 700 m.
+**V** is available when land-reflection resources were created at startup (the
+default); it leaves sky/cloud reflections enabled. `-hud=false` starts with all
+debug text hidden, and **F1** can show it again. Profiling continues with it hidden.
 
 Flight speed scales with ground clearance; near the surface it slows to walking
 speeds. The camera has a two-meter floor above both the procedural surface and

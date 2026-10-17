@@ -30,6 +30,8 @@ the curvature correction, filtering, costs and limitations.
 .\bin\universebuild.exe -tonemap=linear
 # Adjust fixed exposure without changing the cloud density or sunlight
 .\bin\universebuild.exe -exposure=0.8
+# Clearer aerosols without removing the blue sky or changing cloud coverage
+.\bin\universebuild.exe -haze=0.25
 ```
 
 `-cloud-scale` accepts 0.25, 0.5 (default), or 1. Coverage defaults to 0.52.
@@ -47,6 +49,25 @@ response. Exposure is a positive multiplier up to 16, with no automatic
 adaptation. Caustic debug views retain the original linear response at exposure
 1 so their intensity scale remains meaningful. UI is composited after tone
 mapping. This uses the existing engine resolve, adding no passes or targets.
+
+For in-place diagnosis, **[ / ]** adjust exposure by one third of a stop and
+**, / .** adjust aerosol concentration by 0.25. **Backslash** restores the launch
+values, including custom flags. Keyboard exposure is bounded to 1/64–16; `-haze`
+accepts finite values from 0–4 and defaults to 1. Haze scales the Mie coefficient
+in the shared frame data, so scattering and extinction agree in the sun table,
+view atmosphere, cloud march, water sky cache and reflected land paths. It leaves
+Rayleigh scattering, cloud density, surface albedo and the optical burst alone.
+The HUD shows both controls; JSONL includes `Haze` and effective `Exposure`.
+No automatic exposure or new rendering pass is introduced.
+
+The October 17 washout comparison isolated two controls: **R** removes the
+compact burst, but the broad near-sun veil remains in atmospheric scattering;
+**F** also removes distance haze and atmospheric sunlight attenuation, so it is
+not a pure contrast comparison. **M** changes foreground material detail only
+(fading over 160–700 m), not the mountain palette. Lower haze reduces the broad
+halo; lower exposure gives bright terrain/clouds more tonal separation. The
+existing defaults are preserved pending visual preference checks. Captures are
+under `captures/washout-*`, including a low-sun/ridge view.
 
 The earlier screen-space sun shafts do not run in cloud mode: they execute
 before cloud composition and have no cloud visibility. Physical view scattering

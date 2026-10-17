@@ -36,6 +36,7 @@ type perfReport struct {
 	CloudScale, CloudCoverage                                            float64
 	Tonemap                                                              string
 	Exposure                                                             float32
+	Haze                                                                 float32
 	CausticCache, WaveCache, WaterPasses, AtmosphereCache, ShoreFoam     bool
 	WaveFiltering, WaveFilteringActive                                   bool
 	WaterReflections, WaterReflectionsActive                             bool
@@ -224,6 +225,7 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	r.Longitude = math.Atan2(d[0], d[2]) * 180 / math.Pi
 	r.Latitude = math.Asin(d[1]) * 180 / math.Pi
 	r.AirPasses, r.AirScale = g.deferredAir, g.airScale
+	r.Haze = g.haze
 	r.Eye, r.Forward = [3]float64(g.cam.eye), [3]float64(g.cam.forward)
 	r.Ocean, r.Underwater = g.oceanEnabled, g.oceanEnabled && r.SeaHeight < 0
 	r.Atmosphere, r.Materials, r.Grass, r.Shadows, r.SunRays = g.atmosphereEnabled, g.materialsEnabled, g.grassEnabled, g.shadowsEnabled, g.sunRaysEnabled
