@@ -12,8 +12,8 @@ type WaveCache struct{ pass *renderer.AppCompute }
 
 func NewWaveCache(r *renderer.Renderer) (*WaveCache, error) {
 	targets := make([]*renderer.RenderTarget, 2)
-	for i, format := range []renderer.TargetFormat{renderer.TargetRGBA16F, renderer.TargetR16F} {
-		target, err := r.CreateRenderTarget(renderer.RenderTargetDesc{Name: []string{"wave gradients", "wave curvature"}[i], Format: format, Width: 512, Height: 512, Filter: renderer.FilterLinear, Wrap: renderer.WrapRepeat, Storage: true})
+	for i := range targets {
+		target, err := r.CreateRenderTarget(renderer.RenderTargetDesc{Name: []string{"wave gradients", "wave curvature and variance"}[i], Format: renderer.TargetRGBA16F, Width: 772, Height: 529, Filter: renderer.FilterLinear, Storage: true})
 		if err != nil {
 			return nil, err
 		}
@@ -26,7 +26,7 @@ func NewWaveCache(r *renderer.Renderer) (*WaveCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	pass.SetDispatch(64, 64, 1)
+	pass.SetDispatch(97, 67, 1)
 	return &WaveCache{pass}, nil
 }
 func (c *WaveCache) SetEnabled(enabled bool) { c.pass.SetEnabled(enabled) }

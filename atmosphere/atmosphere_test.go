@@ -58,9 +58,13 @@ func TestParameterStd140Layout(t *testing.T) {
 		Water: [4]float32{17, 18, 19, 20}, Detail: [4]float32{21, 22, 23, 24}, Features: [4]float32{25, 26, 27, 28}, Rendering: [4]float32{29, 30, 31, 32},
 		CausticOrigin: [4]float32{33, 34, 35, 36}, CausticU: [4]float32{37, 38, 39, 40}, CausticV: [4]float32{41, 42, 43, 44},
 		CloudShadowU: [4]float32{45, 46, 47, 48}, CloudShadowV: [4]float32{49, 50, 51, 52}, CloudShadowMeta: [4]float32{53, 54, 55, 56},
+		WaterRendering: [4]float32{57, 58, 59, 60},
 	}
 	data := p.Bytes()
-	for index := 0; index < 56; index++ {
+	if len(data) != 240 {
+		t.Fatalf("parameter size = %d, want 240", len(data))
+	}
+	for index := 0; index < 60; index++ {
 		got := math.Float32frombits(binary.LittleEndian.Uint32(data[index*4:]))
 		if got != float32(index+1) {
 			t.Fatalf("std140 float %d = %g", index, got)

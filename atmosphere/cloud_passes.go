@@ -21,6 +21,7 @@ type CloudPasses struct {
 	volume    *renderer.AppCompute
 	composite *renderer.AppPass
 	light     *renderer.RenderTarget
+	noise     *renderer.Texture
 	scale     float32
 }
 
@@ -52,7 +53,7 @@ func NewCloudPasses(r *renderer.Renderer, scale float32, seed uint64, composed *
 	if err != nil {
 		return nil, err
 	}
-	p := &CloudPasses{Shadows: shadow, volume: volume, composite: composite, light: light, scale: scale}
+	p := &CloudPasses{Shadows: shadow, volume: volume, composite: composite, light: light, noise: noise, scale: scale}
 	p.SetEnabled(false)
 	return p, nil
 }

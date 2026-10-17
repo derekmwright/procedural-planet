@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,8 @@ type perfReport struct {
 	Tonemap                                                              string
 	Exposure                                                             float32
 	CausticCache, WaveCache, WaterPasses, AtmosphereCache, ShoreFoam     bool
+	WaveFiltering, WaveFilteringActive                                   bool
+	WaterReflections, WaterReflectionsActive                             bool
 	CausticTemporal                                                      bool
 	UploadsSkipped, TerrainUploadsWaiting                                int
 	Event                                                                string `json:"event"`
@@ -234,6 +237,9 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	r.CausticCache = g.causticCacheEnabled
 	r.CausticTemporal = g.causticTemporal
 	r.WaveCache, r.WaterPasses, r.AtmosphereCache, r.ShoreFoam = g.waveTextures, g.waterPasses, g.atmosphereCache, g.shoreFoam
+	r.WaveFiltering, r.WaterReflections = g.waveFiltering, g.waterReflections
+	r.WaveFilteringActive = g.waveCache != nil && g.waveFiltering && r.Ocean && math.Abs(r.SeaHeight) < 4000
+	r.WaterReflectionsActive = g.waterSky != nil && g.waterSky.Active()
 	p.report = r
 	if p.marker {
 		r.Event = "marker"
@@ -272,6 +278,15 @@ func (p *performance) draw(e *glyph.Engine) {
 	}
 	if r.CloudShadowsActive {
 		e.Debugf("GPU cloud shadows %.2f ms", r.GPUPasses["cloud shadows"])
+	}
+	if r.WaterReflectionsActive {
+		var filterMS float64
+		for name, ms := range r.GPUPasses {
+			if strings.HasPrefix(name, "water sky filter ") {
+				filterMS += ms
+			}
+		}
+		e.Debugf("GPU water sky %.2f | filter %.2f ms", r.GPUPasses["water sky"], filterMS)
 	}
 	if r.GPUPasses["wave field"] > 0 {
 		e.Debugf("GPU wave cache %.2f | focusing %.2f ms", r.GPUPasses["wave field"], r.GPUPasses["water focusing"]+r.GPUPasses["water focusing resolve"]+r.GPUPasses["water focusing blur"]+r.GPUPasses["water focusing filter"]+r.GPUPasses["water focusing history"]+r.GPUPasses["water focusing state"])

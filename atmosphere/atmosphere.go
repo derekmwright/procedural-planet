@@ -22,18 +22,19 @@ func Shaders() renderer.ShaderSet {
 	return renderer.ShaderSet{SkyFrag: sky, LitFrag: terrain}
 }
 
-// Parameters owns fourteen std140 vec4s in the engine's application UBO at
+// Parameters owns fifteen std140 vec4s in the engine's application UBO at
 // set 1, binding 6. Engine sky colors and shadow data remain engine-owned.
 type Parameters struct {
 	Eye, Planet, Rayleigh, Mie, Water, Detail, Features, Rendering [4]float32
 	CausticOrigin, CausticU, CausticV                              [4]float32
 	CloudShadowU, CloudShadowV, CloudShadowMeta                    [4]float32
+	WaterRendering                                                 [4]float32
 }
 
 // Bytes packs explicitly rather than relying on Go struct layout.
-func (p Parameters) Bytes() [224]byte {
-	var result [224]byte
-	for slot, values := range [14][4]float32{p.Eye, p.Planet, p.Rayleigh, p.Mie, p.Water, p.Detail, p.Features, p.Rendering, p.CausticOrigin, p.CausticU, p.CausticV, p.CloudShadowU, p.CloudShadowV, p.CloudShadowMeta} {
+func (p Parameters) Bytes() [240]byte {
+	var result [240]byte
+	for slot, values := range [15][4]float32{p.Eye, p.Planet, p.Rayleigh, p.Mie, p.Water, p.Detail, p.Features, p.Rendering, p.CausticOrigin, p.CausticU, p.CausticV, p.CloudShadowU, p.CloudShadowV, p.CloudShadowMeta, p.WaterRendering} {
 		for axis, value := range values {
 			binary.LittleEndian.PutUint32(result[(slot*4+axis)*4:], math.Float32bits(value))
 		}

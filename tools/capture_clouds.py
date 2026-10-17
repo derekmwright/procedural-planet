@@ -19,6 +19,8 @@ SCENES = {
     "orbit": ["-longitude=20", "-latitude=12.6", "-altitude=800000"],
     "night": ["-longitude=140", "-latitude=-12.6", "-altitude=800000"],
     "underwater": ["-sea-level=150.4257", "-altitude=5", "-flight", "-heading=-72", "-pitch=12"],
+    "water-window": ["-sea-level=150.4257", "-altitude=24", "-flight", "-heading=-72", "-pitch=65"],
+    "water-distance": ["-sea-level=137.3", "-altitude=220", "-flight", "-heading=-72", "-pitch=-28"],
 }
 
 def main():
@@ -35,6 +37,8 @@ def main():
     parser.add_argument("--off", action="store_true")
     parser.add_argument("--no-shadows", action="store_true", help="cloud-shadow ablation; keep the visible clouds")
     parser.add_argument("--no-rays", action="store_true", help="disable the extra screen-space shafts in clear-air comparisons")
+    parser.add_argument("--no-reflections", action="store_true", help="use the inline clear-air water reference")
+    parser.add_argument("--no-wave-filtering", action="store_true", help="use the previous surface normal fade")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     for name in args.scenes:
@@ -48,6 +52,10 @@ def main():
             command.append("-sun-rays=false")
         if args.no_shadows:
             command.append("-cloud-shadows=false")
+        if args.no_reflections:
+            command.append("-water-reflections=false")
+        if args.no_wave_filtering:
+            command.append("-wave-filtering=false")
         log_path = args.output / (name + ".log")
         print(f"Capturing {name}", flush=True)
         with log_path.open("w") as log:

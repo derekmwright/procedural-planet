@@ -35,12 +35,13 @@ WaterWave waterWavesLegacy(vec3 p,vec3 up) {
     }
     return w;
 }
-// Hardware bilinear repeat over one 128 m period. Texel zero stores p=0,
-// so offset by half a texel to preserve the original field's sample phase.
+// Padded atlas levels repeat over one 128 m period. The first interior texel
+// stores p=0, preserving the original field's sample phase for caustics.
 layout(set=1,binding=8) uniform sampler2D waveGradient;
 layout(set=1,binding=9) uniform sampler2D waveCross;
+#include "wave-levels.glsl"
 void wavePlane(vec2 p,out vec2 g,out mat2 h) {
-    vec2 uv=p/128.0+vec2(0.5/512.0);
+    vec2 uv=waveLevelUV(p,0);
     vec4 a=textureLod(waveGradient,uv,0.0);
     float b=textureLod(waveCross,uv,0.0).r;
     g=a.xy; h=mat2(a.z,b,b,a.w);
@@ -60,4 +61,37 @@ WaterWave waterWaves(vec3 p,vec3 up) {
 }
 vec3 waterNormal(vec3 p,vec3 up,float detail) {
     return normalize(up-waterWaves(p,up).gradient*detail);
+}
+
+void waveSurfacePlane(vec2 p,float lod,out vec2 gradient,out mat2 covariance) {
+    int level=int(lod);
+    vec2 uv=waveLevelUV(p,level);
+    gradient=textureLod(waveGradient,uv,0).xy;
+    vec3 variance=textureLod(waveCross,uv,0).yzw;
+    if(lod>float(level)&&level<9) {
+        uv=waveLevelUV(p,level+1);
+        vec2 next=textureLod(waveGradient,uv,0).xy;
+        vec3 nextVariance=textureLod(waveCross,uv,0).yzw;
+        float t=fract(lod);
+        vec2 delta=next-gradient;
+        variance=mix(variance,nextVariance,t)+t*(1.0-t)*vec3(delta.x*delta.x,delta.y*delta.y,delta.x*delta.y);
+        gradient=mix(gradient,next,t);
+    }
+    covariance=mat2(variance.x,variance.z,variance.z,variance.y);
+}
+
+void waterSurface(vec3 p,vec3 up,float footprint,out vec3 normal,out float variance) {
+    float lod=clamp(log2(max(footprint/0.25,1.0)),0.0,9.0);
+    vec3 gradient=vec3(0); mat3 covariance=mat3(0);
+    vec2 g; mat2 c;
+    waveSurfacePlane(p.xy,lod,g,c);
+    gradient+=vec3(g,0); covariance+=mat3(c[0][0],c[0][1],0,c[1][0],c[1][1],0,0,0,0);
+    waveSurfacePlane(p.yz+vec2(37,71),lod,g,c);
+    gradient+=vec3(0,g); covariance+=mat3(0,0,0,0,c[0][0],c[0][1],0,c[1][0],c[1][1]);
+    waveSurfacePlane(p.zx+vec2(83,19),lod,g,c);
+    gradient+=vec3(g.y,0,g.x); covariance+=mat3(c[1][1],0,c[1][0],0,0,0,c[0][1],0,c[0][0]);
+    mat3 tangent=mat3(1)-outerProduct(up,up);
+    normal=normalize(up-tangent*gradient*0.57735);
+    covariance=tangent*covariance*tangent*(1.0/3.0);
+    variance=max(covariance[0][0]+covariance[1][1]+covariance[2][2],0.0);
 }

@@ -8,6 +8,7 @@ const float WATER_CLARITY = 2.0;
 #define WATER_OPAQUE_DISTANCE (0.4*WATER_CLARITY)
 
 #include "waterlight.glsl"
+#include "water-sky.glsl"
 
 float seabedCaustics(vec3 relativePosition,vec3 point,float depth) {
     vec3 p=vec3(planetData.detail.yz,planetData.water.z)+relativePosition;
@@ -88,7 +89,7 @@ vec3 underwaterWindow(vec3 direction,float distance) {
     vec3 surface=vec3(0.008,0.04,0.055)*(0.05+day);
     // Beyond Snell's window show a dark reflective underside, not open sky.
     if(dot(airDirection,airDirection)>0.01) {
-        Air above=integrateAir(position,airDirection,PLANET_RADIUS*8.0,sun,pc.sunColor.rgb);
+        Air above=waterSky(position,airDirection,sun,pc.sunColor.rgb,0.0);
         float alignment=max(dot(airDirection,sun),0.0);
         float glint=pow(alignment,650.0)*2.0+pow(alignment,32.0)*0.09;
         float cosine=max(dot(normal,direction),0.0);
@@ -152,7 +153,13 @@ vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaque
     float rippleFade=1.0-smoothstep(0.3,2.0,surfaceDistance);
     float footprint=max(length(dFdx(local)),length(dFdy(local)));
     float detail=1.0-smoothstep(0.25,3.0,footprint);
-    vec3 normal=waterNormal(local,radial,detail*rippleFade);
+    vec3 normal;
+    float unresolvedVariance=0.0;
+    if(planetData.waterRendering.y>0.5&&planetData.mie.w>0.5) {
+        waterSurface(local,radial,footprint,normal,unresolvedVariance);
+    } else {
+        normal=waterNormal(local,radial,detail*rippleFade);
+    }
     float nv=max(dot(normal,view),0.02);
     float fresnel=0.02+0.98*pow(1.0-nv,5.0);
     float travel=max(opaqueDistance-surfaceDistance,0.0)*1000.0;
@@ -162,13 +169,13 @@ vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaque
     vec3 bed=bedRadiance*transmission+body*(1.0-transmission);
     vec3 reflected=reflect(direction,normal);
     reflected=normalize(reflected+radial*max(0.0,0.015-dot(reflected,radial)));
-    Air sky=integrateAir(position+radial*0.001,reflected,PLANET_RADIUS*8.0,sun,pc.sunColor.rgb);
+    Air sky=waterSky(position+radial*0.001,reflected,sun,pc.sunColor.rgb,unresolvedVariance);
     vec3 skyColor=sky.light+vec3(0.001,0.002,0.004)*sky.transmittance;
     vec3 halfVector=sun+view;
     // Broaden subpixel glints according to normal variation and preserve
     // approximate lobe energy instead of allowing unresolved sparkle.
     vec3 nx=dFdx(normal),ny=dFdy(normal);
-    float variance=0.5*(dot(nx,nx)+dot(ny,ny));
+    float variance=unresolvedVariance+0.5*(dot(nx,nx)+dot(ny,ny));
     float specPower=2.0/(2.0/320.0+variance);
     float spec=pow(max(dot(normal,halfVector/max(length(halfVector),0.000001)),0.0),specPower)*(specPower/320.0);
     vec3 direct=(ATM_ENABLED?sunlight(position+radial*0.001,sun):vec3(1.0))

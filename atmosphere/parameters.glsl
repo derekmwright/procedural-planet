@@ -14,6 +14,7 @@ layout(set=1,binding=6,std140) uniform PlanetParameters {
     vec4 cloudShadowU; // light-space U axis, snapped local center U (km)
     vec4 cloudShadowV; // light-space V axis, snapped local center V (km)
     vec4 cloudShadowMeta; // cloud inner/outer radii, local half-span (km), enabled
+    vec4 waterRendering; // sky cache strength, wave filtering, parallax shell radius km, reserved
 } planetData;
 #define DEFERRED_AIR (planetData.rendering.x > 0.5)
 #define DEFERRED_CLOUDS (planetData.rendering.w > 0.5)

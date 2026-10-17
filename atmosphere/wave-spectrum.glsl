@@ -1,8 +1,8 @@
 // 48 deterministic Fourier components per plane: unequal wavelengths, broad
 // directions, random phases. Integer frequencies preserve exact tile continuity.
 // These are shading ripples, not a hydrodynamic ocean simulation.
-void waveSpectrum(vec2 p,out vec2 gradient,out vec3 hessian) {
-    gradient=vec2(0); hessian=vec3(0);
+void waveSpectrumFiltered(vec2 p,float footprint,out vec2 gradient,out vec3 hessian,out vec3 variance) {
+    gradient=vec2(0); hessian=vec3(0); variance=vec3(0);
     for(int i=0;i<48;i++) {
         float f=float(i);
         float angle=f*2.39996323+0.37;
@@ -17,7 +17,17 @@ void waveSpectrum(vec2 p,out vec2 gradient,out vec3 hessian) {
         // Shorter ripples add curvature without increasing large-wave height.
         // Their normals also drive visible reflection/refraction, not just caustics.
         if(i>=32) amplitude=0.009/lengthK;
+        // Gaussian pixel footprint. The unresolved part becomes slope
+        // covariance, rather than disappearing into a perfectly smooth sea.
+        // Each independent Fourier component has mean-square amplitude a²/2.
+        float weight=exp(-0.125*lengthK*lengthK*footprint*footprint);
+        variance+=0.5*amplitude*amplitude*(1.0-weight*weight)*vec3(k.x*k.x,k.y*k.y,k.x*k.y);
+        amplitude*=weight;
         gradient+=amplitude*cos(phase)*k;
         hessian-=amplitude*sin(phase)*vec3(k.x*k.x,k.y*k.y,k.x*k.y);
     }
+}
+void waveSpectrum(vec2 p,out vec2 gradient,out vec3 hessian) {
+    vec3 variance;
+    waveSpectrumFiltered(p,0.0,gradient,hessian,variance);
 }

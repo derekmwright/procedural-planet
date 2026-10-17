@@ -14,13 +14,21 @@ import (
 // cloud field must return unchanged after toggles and target recreation. An
 // undersized dispatch models targets growing after LateUpdate during resize.
 func TestCloudLifecycleGPU(t *testing.T) {
+	runCloudLifecycleGPU(t, false)
+}
+
+func TestWaterSkyLifecycleGPU(t *testing.T) {
+	runCloudLifecycleGPU(t, true)
+}
+
+func runCloudLifecycleGPU(t *testing.T, water bool) {
 	if os.Getenv("PLANET_GPU_TEST") != "1" {
 		t.Skip("set PLANET_GPU_TEST=1 for Vulkan shader checks")
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	g := &cloudLifecycleProbe{t: t}
-	e, err := glyph.New(g, glyph.WithTitle("Cloud lifecycle regression"), glyph.WithWindowSize(160, 90), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithShaders(Shaders()), glyph.WithShaderTextureSlots(5), glyph.WithMaxFrames(80))
+	g := &cloudLifecycleProbe{t: t, waterView: water}
+	e, err := glyph.New(g, glyph.WithTitle("Cloud lifecycle regression"), glyph.WithWindowSize(160, 90), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithShaders(Shaders()), glyph.WithShaderTextureSlots(7), glyph.WithMaxFrames(80))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,12 +47,14 @@ func (cloudTestEnvironment) State() glyph.EnvironmentState {
 }
 
 type cloudLifecycleProbe struct {
-	t       *testing.T
-	passes  *AirPasses
-	frame   int
-	stage   int
-	checked int
-	cloudy  *image.RGBA
+	t         *testing.T
+	passes    *AirPasses
+	frame     int
+	stage     int
+	checked   int
+	cloudy    *image.RGBA
+	waterView bool
+	waterSky  *WaterSky
 }
 
 func (g *cloudLifecycleProbe) Init(e *glyph.Engine) error {
@@ -52,6 +62,10 @@ func (g *cloudLifecycleProbe) Init(e *glyph.Engine) error {
 	e.SetCamera(mgl32.Vec3{}, mgl32.Vec3{0, 0.2, 1}, mgl32.Vec3{0, 1, 0})
 	var err error
 	g.passes, err = NewAirPasses(e.Renderer(), 0.5, 0.5, 7)
+	if err == nil && g.waterView {
+		e.SetCamera(mgl32.Vec3{}, mgl32.Vec3{0, 1, -0.2}, mgl32.Vec3{0, 0, 1})
+		g.waterSky, err = NewWaterSky(e.Renderer(), g.passes.Clouds)
+	}
 	return err
 }
 
@@ -94,15 +108,31 @@ func (g *cloudLifecycleProbe) Update(e *glyph.Engine, _ float32) {
 	active := g.stage != 5
 	clouds := active && g.stage != 1
 	g.passes.SetEnabled(active, clouds)
-	p := FrameParameters(500000, [3]float64{0, 0, 501000}, active)
+	eye := [3]float64{0, 0, 501000}
+	if g.waterView {
+		eye[2] = 500020
+	}
+	p := FrameParameters(500000, eye, active)
+	if g.waterView {
+		p.SetOcean(500000, 0, eye)
+	}
 	if active {
 		p.Rendering[0] = 1
 	}
 	if clouds {
 		p.Rendering[3] = 1
 	}
-	if err := g.passes.Clouds.Shadows.Update(&p, [3]float64{0, 0, 501000}, (cloudTestEnvironment{}).State().SunDir, 500000, 0, 0, 1, clouds); err != nil {
+	if err := g.passes.Clouds.Shadows.Update(&p, eye, (cloudTestEnvironment{}).State().SunDir, 500000, 0, 0, 1, clouds); err != nil {
 		g.t.Fatal(err)
+	}
+	if g.waterSky != nil {
+		state := (cloudTestEnvironment{}).State()
+		if err := g.waterSky.Update(&p, e.ViewProjection().Inv(), state.SunDir, state.SunColor, 500000, 0, 0, 1, clouds, active); err != nil {
+			g.t.Fatal(err)
+		}
+		if g.waterSky.Active() != active {
+			g.t.Fatalf("water cache stage %d: active = %t, want %t", g.stage, g.waterSky.Active(), active)
+		}
 	}
 	data := p.Bytes()
 	if err := e.Renderer().SetShaderParameters(data[:]); err != nil {

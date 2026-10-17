@@ -2,14 +2,24 @@
 #extension GL_GOOGLE_include_directive : require
 layout(local_size_x=8,local_size_y=8) in;
 layout(set=2,binding=4,rgba16f) uniform writeonly image2D gradients;
-layout(set=2,binding=5,r16f) uniform writeonly image2D crossCurvature;
+layout(set=2,binding=5,rgba16f) uniform writeonly image2D crossCurvature;
 #include "parameters.glsl"
 #include "wave-spectrum.glsl"
+#include "wave-levels.glsl"
 void main() {
     ivec2 p=ivec2(gl_GlobalInvocationID.xy);
     if(any(greaterThanEqual(p,imageSize(gradients)))) return;
-    vec2 gradient; vec3 hessian;
-    waveSpectrum(vec2(p)*0.25,gradient,hessian);
+    int level=-1;
+    for(int i=0;i<10;i++) {
+        ivec2 q=p-waveLevelOrigin(i);
+        if(all(greaterThanEqual(q,ivec2(0)))&&all(lessThan(q,ivec2(waveLevelSize(i)+2)))) { level=i; break; }
+    }
+    if(level<0) { imageStore(gradients,p,vec4(0)); imageStore(crossCurvature,p,vec4(0)); return; }
+    int size=waveLevelSize(level);
+    ivec2 q=(p-waveLevelOrigin(level)+size-1)%size;
+    vec2 gradient; vec3 hessian,variance;
+    float footprint=level==0?0.0:128.0/float(size);
+    waveSpectrumFiltered(vec2(q)*(128.0/float(size)),footprint,gradient,hessian,variance);
     imageStore(gradients,p,vec4(gradient,hessian.xy));
-    imageStore(crossCurvature,p,vec4(hessian.z));
+    imageStore(crossCurvature,p,vec4(hessian.z,variance));
 }

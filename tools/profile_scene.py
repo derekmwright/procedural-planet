@@ -31,6 +31,9 @@ SCENES = {
     "orbit": ["-longitude=100", "-latitude=12.6", "-altitude=300000"],
 }
 VARIANTS = {
+    "water-updated": ["-clouds=true", "-water-reflections=true", "-wave-filtering=true"],
+    "water-inline": ["-clouds=true", "-water-reflections=false", "-wave-filtering=true"],
+    "water-unfiltered": ["-clouds=true", "-water-reflections=true", "-wave-filtering=false"],
     "clouds-filmic": ["-clouds=true", "-cloud-scale=0.5", "-sun-rays=false", "-tonemap=filmic"],
     "clouds-linear": ["-clouds=true", "-cloud-scale=0.5", "-sun-rays=false", "-tonemap=linear"],
     "clouds-off": ["-clouds=false", "-sun-rays=false"],
@@ -77,6 +80,8 @@ def summarize(rows):
         "air_active": sorted({r["AirPassesActive"] for r in rows}),
         "clouds_active": sorted({r.get("CloudsActive", False) for r in rows}),
         "cloud_shadows_active": sorted({r.get("CloudShadowsActive", False) for r in rows}),
+        "water_reflections_active": sorted({r.get("WaterReflectionsActive", False) for r in rows}),
+        "wave_filtering_active": sorted({r.get("WaveFilteringActive", False) for r in rows}),
         "tonemap": sorted({r.get("Tonemap", "linear") for r in rows}),
         "exposure": sorted({r.get("Exposure", 1) for r in rows}),
         "prepass_active_share": sum(r.get("PrepassActiveSamples", 0) for r in rows) / sum(r["samples"] for r in rows),

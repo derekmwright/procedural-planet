@@ -34,6 +34,9 @@ type game struct {
 	asyncTerrainUploads                          bool
 	waveCache                                    *atmosphere.WaveCache
 	waveTextures                                 bool
+	waveFiltering                                bool
+	waterReflections                             bool
+	waterSky                                     *atmosphere.WaterSky
 	atmosphereCache                              bool
 	causticsDebug                                bool
 	waterPasses                                  bool
@@ -100,6 +103,12 @@ func (g *game) Init(e *glyph.Engine) error {
 	if err := g.grass.init(e, g.world, g.syncTerrain, g.grassDensity); err != nil {
 		return err
 	}
+	// The sea-level sky cache reads this table before drawing the scene.
+	if g.atmosphereCache {
+		if err := atmosphere.NewSunTable(e.Renderer()); err != nil {
+			return err
+		}
+	}
 	if g.deferredAir {
 		var err error
 		g.airPasses, err = atmosphere.NewAirPasses(e.Renderer(), float32(g.airScale), float32(g.cloudScale), g.world.Seed)
@@ -107,16 +116,17 @@ func (g *game) Init(e *glyph.Engine) error {
 			return err
 		}
 		g.cloudPasses = g.airPasses.Clouds
+		if g.waterReflections {
+			g.waterSky, err = atmosphere.NewWaterSky(e.Renderer(), g.cloudPasses)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	if g.waterPasses {
 		var err error
 		g.waterScatter, err = atmosphere.NewWaterPasses(e.Renderer())
 		if err != nil {
-			return err
-		}
-	}
-	if g.atmosphereCache {
-		if err := atmosphere.NewSunTable(e.Renderer()); err != nil {
 			return err
 		}
 	}
@@ -198,6 +208,9 @@ func (g *game) camera(e *glyph.Engine) {
 		g.waveCache.SetEnabled(active)
 		if active {
 			parameters.Mie[3] = 1
+			if g.waveFiltering {
+				parameters.WaterRendering[1] = 1
+			}
 		}
 	}
 	if g.causticCache != nil {
@@ -238,6 +251,13 @@ func (g *game) camera(e *glyph.Engine) {
 	if g.cloudPasses != nil {
 		active := g.cloudsEnabled && g.atmosphereEnabled && g.cloudShadows && g.shadowsEnabled && !g.causticsDebug && g.cloudCoverage > 0
 		if err := g.cloudPasses.Shadows.Update(&parameters, [3]float64(g.cam.eye), (space{}).State().SunDir, g.world.Radius, g.seaLevel, g.elapsed, g.cloudCoverage, active); err != nil {
+			g.lastError = err
+			e.Close()
+		}
+	}
+	if g.waterSky != nil {
+		state := (space{}).State()
+		if err := g.waterSky.Update(&parameters, e.ViewProjection().Inv(), state.SunDir, state.SunColor, g.world.Radius, g.seaLevel, g.elapsed, g.cloudCoverage, g.cloudsEnabled, g.oceanEnabled && g.atmosphereEnabled && !g.causticsDebug); err != nil {
 			g.lastError = err
 			e.Close()
 		}
@@ -424,6 +444,8 @@ func run() error {
 	causticCache := flag.Bool("caustic-cache", true, "forward-project and sum refracted sunlight (false: legacy inverse solver)")
 	causticTemporal := flag.Bool("caustic-temporal", true, "stabilize caustic brightness over time (false: spatial filtering only)")
 	waveTextures := flag.Bool("wave-cache", true, "use GPU-cached broad wave spectrum (false compares previous five-wave field)")
+	waveFiltering := flag.Bool("wave-filtering", true, "preserve unresolved wave slopes as reflection roughness")
+	waterReflections := flag.Bool("water-reflections", true, "cache sky and cloud reflections near the sea (requires air-passes)")
 	asyncTerrainUploads := flag.Bool("async-terrain-uploads", true, "stream terrain into GPU-local buffers (false compares pooled dynamic buffers)")
 	shoreFoam := flag.Bool("shore-foam", true, "enable animated shallow-water foam and wet shoreline sand")
 	deferredAir := flag.Bool("air-passes", true, "separate view atmosphere with depth-aware reconstruction (false: inline reference)")
@@ -504,7 +526,7 @@ func run() error {
 	}
 	opts := []glyph.Option{glyph.WithTitle("Procedural Planet - Orbit to Surface"), glyph.WithWindowSize(*width, *height), glyph.WithMSAA(4), glyph.WithProjection(60, 0.1, float32(*radius*1000*20)), glyph.WithValidation(*validate), glyph.WithInterpolation(false), glyph.WithVSync(*vsync)}
 	opts = append(opts, glyph.WithShaders(atmosphere.Shaders()))
-	opts = append(opts, glyph.WithShaderTextureSlots(5), glyph.WithAppTimingCapacity(32))
+	opts = append(opts, glyph.WithShaderTextureSlots(7), glyph.WithAppTimingCapacity(32))
 	opts = append(opts, glyph.WithDepthPrepass(prepassMode))
 	if *pipelineStats {
 		opts = append(opts, glyph.WithPipelineStatistics())
@@ -566,6 +588,7 @@ func run() error {
 	g.causticsDebug = *causticsDebug
 	g.atmosphereCache = *atmosphereCache
 	g.waveTextures = *waveTextures
+	g.waveFiltering, g.waterReflections = *waveFiltering, *waterReflections
 	g.causticCacheEnabled = *causticCache
 	g.causticTemporal = *causticTemporal
 	g.shoreFoam = *shoreFoam

@@ -6,6 +6,11 @@ curvature, and supports cameras below, inside, or above the layer. Moving cloud
 shadows share this density field and wind clock, dimming direct sunlight on
 terrain, water and atmospheric haze.
 
+Nearby water also samples this cloud field through a sea-level reflection
+cache. The underwater sky window uses it too, while the separate visible cloud
+pass remains disabled underwater. See [water lighting](water-lighting.md) for
+the curvature correction, filtering, costs and limitations.
+
 ![Cloud layer viewed from above](images/clouds.png)
 
 ## Controls
@@ -295,8 +300,9 @@ percentile 1/255); sparse silhouette differences remain from reconstruction.
   The global projection is coarser still. These are filtered approximations,
   not per-receiver cloud ray tracing. Mountains can shade clouds within the
   existing terrain shadow-map coverage.
-- Ocean reflections and the refracted sky seen from underwater remain clear-air
-  views. The cloud view pass is disabled underwater to preserve water composition.
+- The water sky cache uses one representative cloud height for parallax and
+  fades back to clear air across 8–32 km from its origin. It cannot reproduce
+  exact thick-volume parallax at distant receivers or reflect nearby geometry.
 - The single fixed layer has fairly soft, broad formations. Sun-facing edges can
   still be bright after the filmic highlight rolloff, and spatial sampling grain
   can remain in thin clouds,
@@ -310,11 +316,13 @@ percentile 1/255); sparse silhouette differences remain from reconstruction.
   depth/visibility, water crossings and resize. History allocation alone is
   insufficient; retain this non-temporal path as a reference.
 
-The engine dependency pins the published commit from
-[PR #193](https://github.com/derekmwright/glyphengine/pull/193), adding opt-in shared
-sampler and named GPU timer capacities for requests #191 and #192. The showcase
-requests five shared sampler slots and a capacity of 32 application timers;
-seventeen are registered. The cloud-shadow field occupies slot 4 (binding 11).
+The engine dependency pins `45ce4ed15263`, including the shared sampler/timer
+capacities from [PR #193](https://github.com/derekmwright/glyphengine/pull/193),
+frame-fenced instance staging from [PR #197](https://github.com/derekmwright/glyphengine/pull/197),
+and application pipeline statistics from [PR #198](https://github.com/derekmwright/glyphengine/pull/198).
+The showcase requests seven shared sampler slots and 32 application timers;
+24 timers are registered with all effects enabled. The cloud-shadow field
+occupies slot 4 (binding 11), and water sky radiance/transmission use slots 5–6.
 [Request #190](https://github.com/derekmwright/glyphengine/issues/190) for native
 sampled 3D textures remains separate; the existing noise atlas needs no such API.
 

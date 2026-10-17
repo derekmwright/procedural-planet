@@ -24,12 +24,12 @@ func TestCloudViewSamplingGPU(t *testing.T) {
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	volume, err := os.ReadFile("cloud-volume.comp")
+	volume, err := os.ReadFile("cloud-march.glsl")
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(volume)
-	start, end := strings.Index(text, "float cloudPhase("), strings.Index(text, "void renderCloud(")
+	start, end := strings.Index(text, "float cloudPhase("), len(text)
 	if start < 0 || end <= start {
 		t.Fatal("cloud march entry points changed")
 	}
@@ -64,7 +64,7 @@ void main() {
     fixturePhase=gl_FragCoord.x*(2.0*PI/256.0);
     vec3 dir=vec3(1,0,0),sun=vec3(0,0,1);
     Air actual=Air(vec3(0),vec3(1));
-    marchCloud(actual,dir,sun,vec2(0,80),0.001);
+    marchCloud(actual,EYE_PLANET,dir,sun,vec2(0,80),0.001);
     // Dense uniform midpoint quadrature, independent of production intervals.
     float reference=0.0;
     const float dt=80.0/4096.0,sigma=0.04;

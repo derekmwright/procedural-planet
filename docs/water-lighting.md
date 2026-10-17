@@ -1,5 +1,101 @@
 # Wave-driven water lighting
 
+## Cloud reflections and wave filtering (2026-10-17)
+
+Two additions are enabled by default:
+
+- `-water-reflections` caches sky and cloud lighting near the ocean. Setting it
+  to `false` restores the inline clear-air reflection and refraction reference.
+  It requires `-air-passes`; **C** changes the cached clouds and **F** disables
+  the atmosphere. Ocean-off scenes do not build the cache.
+- `-wave-filtering` filters visible surface slopes according to pixel footprint.
+  Missing wave energy becomes residual slope variance, broadening reflected
+  clouds and solar glints. Setting it to `false` restores the previous normal
+  fading. It requires the wave cache. This switch changes consumption of the
+  field; the same atlas is generated in either mode for a matched comparison.
+
+These follow ideas from the [WebGPU ocean demo](https://ocean-noniv.vercel.app/):
+cache environment lighting and retain the variance of unresolved waves. The
+implementation is written for this spherical renderer; it does not copy the
+demo's shaders or introduce its FFT simulation or displaced ocean mesh.
+
+The sky cache traces the existing cloud/air integrator from sea level directly
+below the camera, with the same seeded density, wind, sunlight and terrain/cloud
+visibility as the visible sky. Six padded 64×64 cube faces refresh every frame.
+RGB radiance and RGB transmission are stored separately; a sun disc is not
+baked into them because the surface already computes its own solar glint.
+Six four-tap reduction passes provide roughness levels. All of this happens
+before scene shading, after the sunlight and cloud-shadow fields are ready.
+The cache also supplies the refracted sky seen through the underwater window.
+
+For a water receiver away from the probe, its reflected ray intersects a curved
+shell 3.4 km above sea level and is reprojected to the probe. This is an
+approximation to a thick cloud volume, not exact spatial reflection. Cached
+lighting fades into inline clear air between 8 and 32 km from the probe; camera
+altitude uses the same fade range. The cache does not reflect terrain, rocks or
+other opaque objects. A conservative frustum test skips it if there can be no
+ocean intersection, or every underwater ray reaches the surface beyond the
+existing 800 m optical cutoff. Looking down at the seabed does not need a new
+reflection pass. There is no history to invalidate when toggling or resizing.
+
+The wave cache keeps the original 48 components per plane and original
+0.25 m sampling phase in level zero. Coarser levels attenuate each component
+with a Gaussian footprint. Its lost mean-square slope is stored as a 2D
+covariance, combined across the three projections and projected onto the
+sphere's tangent plane. Interpolating levels also includes the variance between
+their means. Caustic focusing and underwater normals still read level zero;
+their spectrum, animation and temporal filtering are unchanged.
+
+The current 2D render-target API uses padded atlases instead of native texture
+mip views. The wave atlas is 772×529 in two RGBA16F targets (6.23 MiB), adding
+3.73 MiB over the old gradient/curvature pair. Two ping-pong sky pairs at
+198×282 add 1.70 MiB. The filter copies completed levels between pairs to avoid
+read/write aliasing. Shared sampler slots 5–6 hold the sky outputs; the existing
+wave slots 1–2 now hold their full filtered atlases. The application parameter
+block is 240 bytes.
+
+Engine [request #200](https://github.com/derekmwright/glyphengine/issues/200)
+tracks writable render-target mip views and subresource dependencies. It is a
+non-blocking way to simplify future filtered fields; sampled 3D texture support
+is being developed separately and is not required for this implementation.
+
+The HUD reports `water sky` and the sum of its six filter timings; JSONL retains
+every named pass and records requested/active reflection and filtering modes.
+Use this serial, alternating comparison at the same camera and fixed clock:
+
+```powershell
+python tools/profile_scene.py --scenes coast seabed-oblique --variants water-updated water-inline --repeats 2 --warmup 720
+```
+
+On the RX 7900 XTX at 3840×2054, two alternating 1,201-frame runs per mode,
+excluding the first 720 frames, gave these medians of eight complete 120-frame
+window means per mode. VSync and validation were off, MSAA was 4×, clouds were
+at half resolution, and camera, terrain, vegetation and scene submissions
+matched. Both modes used the new wave filtering, isolating the sky cache:
+
+| View | Inline sky | Cached sky | Cache build + filters |
+| --- | ---: | ---: | ---: |
+| Coastal surface | 10.240 ms | 7.333 ms | 0.680 ms |
+| Seabed looking down | 3.021 ms | 2.819 ms | 0 ms (culled) |
+
+The coastal reduction comes from replacing repeated per-pixel atmosphere
+integration with cached lookups, despite adding cloud reflection. The seabed
+paths perform no reflection work in either mode; their timing difference is
+run variation, not a new underwater optimization claim. This is a two-view
+comparison, not a worst-case budget or a gain to expect at every resolution.
+Results and paired captures: `captures/water-reflections/performance`.
+
+Opt-in Vulkan regressions check unchanged base gradients/curvature, periodic
+boundaries, continuous filtered sampling, positive covariance, conserved far
+wave energy (with a zero-variance negative control), and a frozen water/cloud
+view across cloud/atmosphere toggles and target recreation:
+
+```powershell
+$env:PLANET_GPU_TEST='1'
+$env:GLYPHENGINE_SYNC_VALIDATION='1'
+go test ./atmosphere -run 'TestWaveFilteringGPU|TestWaterSkyLifecycleGPU' -count=1
+```
+
 ## Underwater cast-shadow mode (2026-10-07)
 
 Cast shadows now fade out as the camera descends through the first two metres

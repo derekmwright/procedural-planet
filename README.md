@@ -24,7 +24,9 @@ The first [volumetric cloud layer](docs/clouds.md) is enabled by default. **C**
 switches between clouds and clear air. It follows the planet's curvature and can
 be viewed from below, inside, or from orbit. Moving cloud shadows attenuate
 sunlight on terrain, water and atmospheric haze. Use `-cloud-shadows=false` to
-compare the lighting or save GPU time. Cloud reflections remain future work.
+compare the lighting or save GPU time. Nearby water reflects the same cloud
+field, including the sky window seen from underwater. See the
+[water rendering controls and limits](docs/water-lighting.md).
 
 ## Run
 
@@ -235,7 +237,7 @@ go build -o bin/universebuild.exe .
 ```
 
 Shader generation needs `glslc` from the Vulkan SDK on PATH. The application
-uses its own 176-byte parameter block at set 1, binding 6. Engine sky colors and
+uses its own 240-byte parameter block at set 1, binding 6. Engine sky colors and
 shadow data retain their engine-owned layout. These shaders and the application
 view passes are designed to work together; stock cloud shaders assume a flat
 world and cannot replace the spherical integration unchanged.
@@ -390,11 +392,15 @@ LOD refines. Below-sea-level enclosed basins fill too. These are not independent
 elevated lakes, and there is no drainage or river simulation yet.
 
 Appearance includes wavelength-dependent absorption, a clear shallows band,
-Fresnel sky reflection, solar glints, and animated shading ripples that fade
-with distance and pixel footprint. The reflection evaluates our atmosphere;
-it does not reflect terrain or rocks. There is no refraction, foam, wave geometry,
-buoyancy, or underwater total internal reflection. Underwater views attenuate
-both sunlight and visibility with depth; the surface window is approximate.
+Fresnel sky reflection, solar glints, shoreline foam and animated shading ripples.
+Footprint filtering transfers unresolved wave energy into reflection roughness
+instead of flattening distant water into a mirror. A sea-level cache includes
+the actual cloud and atmosphere field in nearby reflections and underwater
+refraction; distant water retains a clear-air fallback. Use
+`-water-reflections=false` or `-wave-filtering=false` for comparisons.
+Terrain and rocks are not reflected. There is no wave geometry or buoyancy.
+Underwater views attenuate sunlight and visibility with depth; the approximate
+refracted sky window becomes a dark underside beyond the critical angle.
 WATER_CLARITY in atmosphere/ocean.glsl is now 2.0: light and visibility
 carry twice as far as the original water. This is a shader constant.
 
