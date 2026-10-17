@@ -1,5 +1,46 @@
 # Wave-driven water lighting
 
+## Nearby land reflections (2026-10-17)
+
+`-water-land-reflections` is enabled by default with `-air-passes`. It adds
+visible terrain and rocks to the existing sky/cloud reflection. Use
+`-water-land-reflections=false` for a matched comparison; the separate
+`-water-reflections` flag still controls the sky cache.
+
+A half-resolution pass traces the reflected wave direction through current
+opaque scene depth, with at most 64 perspective-correct steps and 12 hit
+refinements. Both camera-to-water and water-to-land distances are capped at
+12 km, fading from 8 km. Submerged geometry is rejected: its scene colour
+already contains analytic water. Screen edges fade to the existing sky result.
+
+The source colour is unfogged opaque radiance. The trace integrates atmosphere
+along the reflected segment, then replaces the reflected sky contribution with
+a signed HDR correction weighted by Fresnel, confidence, shoreline coverage and
+foam. A depth-aware spatial filter and full-resolution water mask reconstruct
+that correction. The usual air/cloud composition then integrates eye-to-water
+exactly once. Land, sky, seabed lighting and underwater shafts are unchanged.
+
+The three passes run before view atmosphere and require no second scene render,
+temporal history, shared sampler slot, or engine change. Two half-resolution
+RGBA16F targets use about 31.6 MiB per swapchain image at 3840×2160. They remain
+allocated while the feature is installed; draws are disabled underwater, above
+12 km, with oceans off, and when the frustum cannot intersect the sea. The HUD
+and JSONL expose trace/filter/composite timings and requested/active state.
+
+This is screen-space reflection, not full scene ray tracing. Hidden and
+off-screen land cannot be reflected. Thin geometry can be missed, source
+lighting comes from the camera-facing surface, and the reflected path includes
+clear-air haze and shadow visibility but not a second cloud-volume march.
+Waves use the trace pixel footprint; the small spatial filter is not a full
+roughness-dependent reflection convolution.
+
+`TestWaterLandReflectionsGPU` checks current-frame source colours, preservation
+of directly visible land/sky, missing and submerged geometry, underwater
+disable, camera turns, toggles and resize with 4× MSAA. The `coast`, `water-land`
+and `water-mountain` capture presets cover a flat beach, low bay and taller
+flooded shore. Captures are under `captures/water-land-*`. Timing comparisons
+remain deferred while a local LLM shares the GPU.
+
 ## Cloud reflections and wave filtering (2026-10-17)
 
 Two additions are enabled by default:
@@ -32,8 +73,9 @@ For a water receiver away from the probe, its reflected ray intersects a curved
 shell 3.4 km above sea level and is reprojected to the probe. This is an
 approximation to a thick cloud volume, not exact spatial reflection. Cached
 lighting fades into inline clear air between 8 and 32 km from the probe; camera
-altitude uses the same fade range. The cache does not reflect terrain, rocks or
-other opaque objects. A conservative frustum test skips it if there can be no
+altitude uses the same fade range. The cache itself does not reflect terrain,
+rocks or other opaque objects; the nearby land pass described above adds them.
+A conservative frustum test skips the cache if there can be no
 ocean intersection, or every underwater ray reaches the surface beyond the
 existing 800 m optical cutoff. Looking down at the seabed does not need a new
 reflection pass. There is no history to invalidate when toggling or resizing.

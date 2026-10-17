@@ -388,7 +388,7 @@ capacities from [PR #193](https://github.com/derekmwright/glyphengine/pull/193),
 frame-fenced instance staging from [PR #197](https://github.com/derekmwright/glyphengine/pull/197),
 and application pipeline statistics from [PR #198](https://github.com/derekmwright/glyphengine/pull/198).
 The showcase requests seven shared sampler slots and 32 application timers;
-24 timers are registered with all effects enabled. The cloud-shadow field
+27 timers are registered with all effects enabled. The cloud-shadow field
 occupies slot 4 (binding 11), and water sky radiance/transmission use slots 5–6.
 [Request #190](https://github.com/derekmwright/glyphengine/issues/190) for native
 sampled 3D textures is now adopted by all three cloud-density consumers. It adds

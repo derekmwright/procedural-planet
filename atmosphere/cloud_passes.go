@@ -26,7 +26,7 @@ type CloudPasses struct {
 }
 
 // NewCloudPasses requires at least five shared shader texture slots. The full
-// showcase registers 24 application timers and requests a capacity of 32.
+// showcase registers 27 application timers and requests a capacity of 32.
 func NewCloudPasses(r *renderer.Renderer, scale float32, seed uint64, composed *renderer.RenderTarget) (*CloudPasses, error) {
 	noise, err := newCloudNoiseTexture(r, cloudNoiseVolume(seed))
 	if err != nil {

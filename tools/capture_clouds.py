@@ -21,6 +21,8 @@ SCENES = {
     "underwater": ["-sea-level=150.4257", "-altitude=5", "-flight", "-heading=-72", "-pitch=12"],
     "water-window": ["-sea-level=150.4257", "-altitude=24", "-flight", "-heading=-72", "-pitch=65"],
     "water-distance": ["-sea-level=137.3", "-altitude=220", "-flight", "-heading=-72", "-pitch=-28"],
+    "water-land": ["-longitude=44", "-latitude=12.6", "-altitude=125", "-flight", "-heading=90", "-pitch=0"],
+    "water-mountain": ["-longitude=47.2", "-latitude=12.6", "-sea-level=1000", "-altitude=400", "-flight", "-heading=90", "-pitch=-3"],
     "sun-ridge": ["-longitude=54", "-latitude=0", "-altitude=100", "-flight", "-heading=-63.2", "-pitch=-4.58"],
     "sun-burst": ["-sea-level=137.3", "-altitude=20", "-flight", "-heading=-66.5", "-pitch=34"],
     "sun-high": ["-altitude=8300", "-flight", "-heading=-66.5", "-pitch=34"],
@@ -42,6 +44,7 @@ def main():
     parser.add_argument("--no-shadows", action="store_true", help="cloud-shadow ablation; keep the visible clouds")
     parser.add_argument("--no-rays", action="store_true", help="disable sun glare, clear-air screen-space shafts, and underwater shafts")
     parser.add_argument("--no-reflections", action="store_true", help="use the inline clear-air water reference")
+    parser.add_argument("--no-land-reflections", action="store_true", help="disable nearby terrain/rock water reflections")
     parser.add_argument("--no-wave-filtering", action="store_true", help="use the previous surface normal fade")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
@@ -58,6 +61,8 @@ def main():
             command.append("-cloud-shadows=false")
         if args.no_reflections:
             command.append("-water-reflections=false")
+        if args.no_land_reflections:
+            command.append("-water-land-reflections=false")
         if args.no_wave_filtering:
             command.append("-wave-filtering=false")
         log_path = args.output / (name + ".log")

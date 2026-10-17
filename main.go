@@ -37,6 +37,8 @@ type game struct {
 	waveFiltering                                bool
 	waterReflections                             bool
 	waterSky                                     *atmosphere.WaterSky
+	waterLand                                    *atmosphere.WaterReflections
+	waterLandReflections                         bool
 	atmosphereCache                              bool
 	causticsDebug                                bool
 	waterPasses                                  bool
@@ -111,6 +113,14 @@ func (g *game) Init(e *glyph.Engine) error {
 	}
 	if g.deferredAir {
 		var err error
+		// Read opaque radiance and replace water's sky contribution before
+		// the air/cloud passes integrate the camera-to-surface segment.
+		if g.waterLandReflections {
+			g.waterLand, err = atmosphere.NewWaterReflections(e.Renderer())
+			if err != nil {
+				return err
+			}
+		}
 		g.airPasses, err = atmosphere.NewAirPasses(e.Renderer(), float32(g.airScale), float32(g.cloudScale), g.world.Seed)
 		if err != nil {
 			return err
@@ -262,6 +272,9 @@ func (g *game) camera(e *glyph.Engine) {
 			e.Close()
 		}
 	}
+	if g.waterLand != nil {
+		g.waterLand.SetEnabled(parameters, e.ViewProjection().Inv(), g.oceanEnabled && !g.causticsDebug)
+	}
 	data := parameters.Bytes()
 	if err := e.Renderer().SetShaderParameters(data[:]); err != nil {
 		panic(fmt.Sprintf("upload planet shader parameters: %v", err))
@@ -371,6 +384,13 @@ func (g *game) Update(e *glyph.Engine, dt float32) {
 	g.performance.draw(e)
 }
 func (g *game) LateUpdate(e *glyph.Engine, _ float32) {
+	if g.waterLand != nil {
+		state := (space{}).State()
+		if err := g.waterLand.Update(e.ViewProjection().Inv(), state.SunDir, state.SunColor); err != nil {
+			g.lastError = err
+			e.Close()
+		}
+	}
 	if g.cloudPasses != nil {
 		state := (space{}).State()
 		if err := g.cloudPasses.Update(e.ViewProjection().Inv(), state.SunDir, state.SunColor, g.world.Radius, g.seaLevel, g.elapsed, g.cloudCoverage); err != nil {
@@ -446,6 +466,7 @@ func run() error {
 	waveTextures := flag.Bool("wave-cache", true, "use GPU-cached broad wave spectrum (false compares previous five-wave field)")
 	waveFiltering := flag.Bool("wave-filtering", true, "preserve unresolved wave slopes as reflection roughness")
 	waterReflections := flag.Bool("water-reflections", true, "cache sky and cloud reflections near the sea (requires air-passes)")
+	waterLandReflections := flag.Bool("water-land-reflections", true, "reflect visible nearby terrain and rocks in water (requires air-passes)")
 	asyncTerrainUploads := flag.Bool("async-terrain-uploads", true, "stream terrain into GPU-local buffers (false compares pooled dynamic buffers)")
 	shoreFoam := flag.Bool("shore-foam", true, "enable animated shallow-water foam and wet shoreline sand")
 	deferredAir := flag.Bool("air-passes", true, "separate view atmosphere with depth-aware reconstruction (false: inline reference)")
@@ -589,6 +610,7 @@ func run() error {
 	g.atmosphereCache = *atmosphereCache
 	g.waveTextures = *waveTextures
 	g.waveFiltering, g.waterReflections = *waveFiltering, *waterReflections
+	g.waterLandReflections = *waterLandReflections
 	g.causticCacheEnabled = *causticCache
 	g.causticTemporal = *causticTemporal
 	g.shoreFoam = *shoreFoam

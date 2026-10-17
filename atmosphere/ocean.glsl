@@ -132,6 +132,24 @@ float shoreFoamCoverage(vec3 p,float depth,float footprint) {
     return edge*smoothstep(0.02,0.18,depth)*breakup*(front*0.7+0.04);
 }
 
+// Surface and screen-space reflections must describe the same wave field.
+void waterReflectionBasis(vec3 direction,float distance,float footprint,
+    out vec3 normal,out vec3 reflected,out float variance,out float fresnel) {
+    vec3 radial=normalize(EYE_PLANET+direction*distance);
+    vec3 local=vec3(planetData.detail.yz,planetData.water.z)+direction*(distance*1000.0);
+    variance=0.0;
+    if(planetData.waterRendering.y>0.5&&planetData.mie.w>0.5) {
+        waterSurface(local,radial,footprint,normal,variance);
+    } else {
+        float detail=(1.0-smoothstep(0.25,3.0,footprint))*(1.0-smoothstep(0.3,2.0,distance));
+        normal=waterNormal(local,radial,detail);
+    }
+    float nv=max(dot(normal,-direction),0.02);
+    fresnel=0.02+0.98*pow(1.0-nv,5.0);
+    reflected=reflect(direction,normal);
+    reflected=normalize(reflected+radial*max(0.0,0.015-dot(reflected,radial)));
+}
+
 vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaqueDistance) {
     float radius=planetData.water.x;
     if(radius<=0.0) return underlying;
@@ -148,27 +166,16 @@ vec3 oceanComposite(vec3 underlying,vec3 bedRadiance,vec3 direction,float opaque
     vec3 sun=normalize(pc.sunDir.xyz);
     vec3 view=-direction;
     vec3 local=vec3(planetData.detail.yz,planetData.water.z)+direction*(surfaceDistance*1000.0);
-    float time=planetData.mie.z;
     // Pure shading ripples: no vertex displacement or shoreline movement.
-    float rippleFade=1.0-smoothstep(0.3,2.0,surfaceDistance);
     float footprint=max(length(dFdx(local)),length(dFdy(local)));
-    float detail=1.0-smoothstep(0.25,3.0,footprint);
-    vec3 normal;
-    float unresolvedVariance=0.0;
-    if(planetData.waterRendering.y>0.5&&planetData.mie.w>0.5) {
-        waterSurface(local,radial,footprint,normal,unresolvedVariance);
-    } else {
-        normal=waterNormal(local,radial,detail*rippleFade);
-    }
-    float nv=max(dot(normal,view),0.02);
-    float fresnel=0.02+0.98*pow(1.0-nv,5.0);
+    vec3 normal,reflected;
+    float unresolvedVariance,fresnel;
+    waterReflectionBasis(direction,surfaceDistance,footprint,normal,reflected,unresolvedVariance,fresnel);
     float travel=max(opaqueDistance-surfaceDistance,0.0)*1000.0;
     vec3 transmission=exp(-WATER_ABSORPTION*travel);
     float day=smoothstep(-0.12,0.25,dot(radial,sun));
     vec3 body=vec3(0.007,0.055,0.075)*(0.05+day);
     vec3 bed=bedRadiance*transmission+body*(1.0-transmission);
-    vec3 reflected=reflect(direction,normal);
-    reflected=normalize(reflected+radial*max(0.0,0.015-dot(reflected,radial)));
     Air sky=waterSky(position+radial*0.001,reflected,sun,pc.sunColor.rgb,unresolvedVariance);
     vec3 skyColor=sky.light+vec3(0.001,0.002,0.004)*sky.transmittance;
     vec3 halfVector=sun+view;

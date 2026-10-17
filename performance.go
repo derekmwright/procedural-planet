@@ -39,6 +39,7 @@ type perfReport struct {
 	CausticCache, WaveCache, WaterPasses, AtmosphereCache, ShoreFoam     bool
 	WaveFiltering, WaveFilteringActive                                   bool
 	WaterReflections, WaterReflectionsActive                             bool
+	WaterLandReflections, WaterLandReflectionsActive                     bool
 	CausticTemporal                                                      bool
 	UploadsSkipped, TerrainUploadsWaiting                                int
 	Event                                                                string `json:"event"`
@@ -240,6 +241,7 @@ func (p *performance) sample(g *game, e *glyph.Engine, start time.Time) {
 	r.WaveFiltering, r.WaterReflections = g.waveFiltering, g.waterReflections
 	r.WaveFilteringActive = g.waveCache != nil && g.waveFiltering && r.Ocean && math.Abs(r.SeaHeight) < 4000
 	r.WaterReflectionsActive = g.waterSky != nil && g.waterSky.Active()
+	r.WaterLandReflections, r.WaterLandReflectionsActive = g.waterLandReflections, g.waterLand.Active()
 	p.report = r
 	if p.marker {
 		r.Event = "marker"
@@ -287,6 +289,9 @@ func (p *performance) draw(e *glyph.Engine) {
 			}
 		}
 		e.Debugf("GPU water sky %.2f | filter %.2f ms", r.GPUPasses["water sky"], filterMS)
+	}
+	if r.WaterLandReflectionsActive {
+		e.Debugf("GPU water land: trace %.2f | filter %.2f | composite %.2f ms", r.GPUPasses["water land reflection"], r.GPUPasses["water land filter"], r.GPUPasses["water land composite"])
 	}
 	if r.GPUPasses["wave field"] > 0 {
 		e.Debugf("GPU wave cache %.2f | focusing %.2f ms", r.GPUPasses["wave field"], r.GPUPasses["water focusing"]+r.GPUPasses["water focusing resolve"]+r.GPUPasses["water focusing blur"]+r.GPUPasses["water focusing filter"]+r.GPUPasses["water focusing history"]+r.GPUPasses["water focusing state"])
