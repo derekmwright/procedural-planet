@@ -103,12 +103,14 @@ step, so a frozen scene does not receive a new noise pattern every frame.
 There is no temporal accumulation or reprojection yet.
 
 Cloud shape, cellular erosion and large-scale coverage come from a seeded
-64³ linear noise volume. The engine currently supports sampled 2D textures;
-we pack slices and a complete, explicitly averaged **3D** mip chain into a
-528×723 RGBA8 atlas. Periodic gutters and two bilinear slice reads provide
-trilinear sampling. Neighboring volume mip levels are blended according to
-the ray footprint and integration interval. Ordinary 2D atlas mip generation
-would incorrectly blend unrelated slices.
+64³ RGBA8 noise volume, uploaded with `CreateTexture3D`. Linear filtering and
+repeat addressing on X, Y and Z provide native trilinear sampling. All seven
+mip levels retain the same explicitly rounded 2×2×2 box means as the original
+atlas; the seeded field has not changed. A single `textureLod` blends neighboring
+volume mip levels according to the ray footprint and integration interval.
+This replaces two to four atlas reads and their slice/gutter coordinate math.
+The view march, cloud-shadow integration and water sky cache share this volume;
+each declares its volume input with the engine's `Reads3D` contract.
 
 The compute pass writes radiance plus endpoint distance and RGB transmission
 to two reduced-resolution RGBA16F targets. The existing depth-aware atmospheric
@@ -118,8 +120,9 @@ error. It filters radiance and RGB transmission together, with endpoint-depth
 weights to reject samples across foreground silhouettes; it does not blur the
 underlying scene color. Clear-air mode retains four-tap bilinear reconstruction.
 Cloud and clear-air modes share the full-resolution output and presentation
-pass. At 3840×2054, the default cloud targets add about 30.1 MiB plus a 1.46 MiB
-noise atlas. Resources remain allocated while C switches modes.
+pass. At 3840×2054, the default cloud targets add about 30.1 MiB. The noise volume
+contains 1.14 MiB of texel data, down from the atlas's 1.46 MiB; device allocation
+alignment may add overhead. Resources remain allocated while C switches modes.
 
 ## Cloud shadows
 
@@ -289,8 +292,11 @@ go build -o bin/universebuild.exe .
 python tools/capture_clouds.py --scenes ground cloud-horizon coast inside above orbit night --output captures/cloud-check
 ```
 
-GPU regression checks exercise the actual atlas sampler across periodic seams
-and all seven mip levels, spherical entry/exit and terrain clipping, mode
+GPU regression checks exercise the production native volume upload and sampler
+across negative coordinates, exact wrap seams on every axis, all seven mip
+levels, fractional LODs and footprint clamping. Seed-7 hashes extracted from
+the previous atlas pin every level's data. Checks also cover spherical
+entry/exit and terrain clipping, mode
 toggles, target recreation, and a dispatch smaller than the live target.
 Cloud restoration matches a frozen reference within one 8-bit channel level.
 The shadow GPU fixture runs the production integrator with constant density and
@@ -337,7 +343,7 @@ percentile 1/255); sparse silhouette differences remain from reconstruction.
   depth/visibility, water crossings and resize. History allocation alone is
   insufficient; retain this non-temporal path as a reference.
 
-The engine dependency pins `45ce4ed15263`, including the shared sampler/timer
+The engine dependency pins `af525925956a`, including the shared sampler/timer
 capacities from [PR #193](https://github.com/derekmwright/glyphengine/pull/193),
 frame-fenced instance staging from [PR #197](https://github.com/derekmwright/glyphengine/pull/197),
 and application pipeline statistics from [PR #198](https://github.com/derekmwright/glyphengine/pull/198).
@@ -345,7 +351,14 @@ The showcase requests seven shared sampler slots and 32 application timers;
 24 timers are registered with all effects enabled. The cloud-shadow field
 occupies slot 4 (binding 11), and water sky radiance/transmission use slots 5–6.
 [Request #190](https://github.com/derekmwright/glyphengine/issues/190) for native
-sampled 3D textures remains separate; the existing noise atlas needs no such API.
+sampled 3D textures is now adopted by all three cloud-density consumers. It adds
+no rendering passes or temporal state. At 1280×720 and fixed frame 361, matched
+coast, cloud-horizon and above-layer captures differ by at most 1/255 in any RGB
+channel; mean differences are 0.00066, 0.00594 and 0.00134/255 respectively.
+Inside-layer, orbital and underwater sky-window views also passed visual checks.
+The full atmosphere GPU suite passed with synchronization validation enabled.
+Captures and logs live under `captures/cloud-native3d`; GPU speed comparisons
+are deferred while the local LLM shares the device.
 
 Method references include Guerrilla's
 [The Real-Time Volumetric Cloudscapes of Horizon Zero Dawn](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)

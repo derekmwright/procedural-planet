@@ -56,8 +56,9 @@ block is 240 bytes.
 
 Engine [request #200](https://github.com/derekmwright/glyphengine/issues/200)
 tracks writable render-target mip views and subresource dependencies. It is a
-non-blocking way to simplify future filtered fields; sampled 3D texture support
-is being developed separately and is not required for this implementation.
+non-blocking way to simplify future filtered fields. The separate sampled 3D
+texture API is now used for the cloud noise consumed by the water sky cache;
+it does not replace writable wave/sky render-target mip views.
 
 The HUD reports `water sky` and the sum of its six filter timings; JSONL retains
 every named pass and records requested/active reflection and filtering modes.

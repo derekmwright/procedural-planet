@@ -1,30 +1,16 @@
-// Seeded volume atlas. Coordinates are continuous planet-space kilometres;
+// Seeded native volume. Coordinates are continuous planet-space kilometres;
 // rotation advects the field without re-seeding or a short animation loop.
-layout(set=2,binding=1) uniform sampler2D cloudNoise;
+layout(set=2,binding=1) uniform sampler3D cloudNoise;
 layout(set=2,binding=12,std140) uniform CloudParameters {
     vec4 layer; // base above planet datum km, thickness km, extinction/km, coverage
     vec4 wind;  // rotation cosine/sine, integration budget, reserved
 } cloud;
 
-vec3 cloudNoiseLevel(vec3 p,int level) {
-    const float rows[7]=float[](0.0,528.0,664.0,700.0,710.0,716.0,720.0);
-    float size=float(64>>level),columns=min(8.0,size),tile=size+2.0;
-    // Texel centres align across the explicitly averaged 3D mip chain.
-    vec3 q=mod(fract(p)*size+size-0.5,size);
-    float z=floor(q.z),next=mod(z+1.0,size);
-    vec2 tile0=vec2(mod(z,columns),floor(z/columns));
-    vec2 tile1=vec2(mod(next,columns),floor(next/columns));
-    vec2 xy=q.xy+1.5;
-    vec2 offset=vec2(0,rows[level]);
-    return mix(textureLod(cloudNoise,(offset+tile0*tile+xy)/vec2(528,723),0).rgb,
-               textureLod(cloudNoise,(offset+tile1*tile+xy)/vec2(528,723),0).rgb,fract(q.z));
-}
 vec3 cloudNoiseAt(vec3 p,float footprint) {
     float lod=clamp(log2(max(footprint*64.0,1.0)),0.0,6.0);
-    int level=int(lod);
-    vec3 a=cloudNoiseLevel(p,level);
-    if(lod==0.0||level==6) return a;
-    return mix(a,cloudNoiseLevel(p,level+1),fract(lod));
+    // Hardware interpolates in all three axes and between the supplied mip
+    // levels. Explicit LOD retains the ray-interval/footprint anti-aliasing.
+    return textureLod(cloudNoise,p,lod).rgb;
 }
 
 vec3 cloudCoordinate(vec3 p) {

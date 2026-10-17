@@ -14,8 +14,9 @@ import (
 	"github.com/derekmwright/glyphengine/shaders"
 )
 
-// Check the actual GPU atlas sampler against an analytic RGB coordinate volume,
-// including negative coordinates and wrap seams. Shell cases include terrain
+// Check the production GPU sampler and upload against an analytic RGB volume,
+// including fractional LODs, negative coordinates and all-axis wrap seams.
+// Shell cases include terrain
 // clipping, inside/above/below cameras, and both lobes of a grazing orbital ray.
 func TestCloudVolumeGeometryGPU(t *testing.T) {
 	if os.Getenv("PLANET_GPU_TEST") != "1" {
@@ -29,18 +30,31 @@ func TestCloudVolumeGeometryGPU(t *testing.T) {
 #include "common.glsl"
 #include "cloud-density.glsl"
 layout(location=0) out vec4 outColor;
+vec3 expectedLevel(vec3 p,int level) {
+    float scale=float(1<<level),size=64.0/scale;
+    vec3 q=mod(fract(p)*size+size-0.5,size);
+    vec3 a=floor(q),b=mod(a+1.0,size);
+    // Each box mean of the coordinate volume has a known analytic value.
+    return (mix(a,b,fract(q))*scale+0.5*(scale-1.0))*4.0/255.0;
+}
 void main() {
     bool bad=false;
-    if(gl_FragCoord.y<32.0) {
+    if(gl_FragCoord.y<96.0) {
         vec3 p=vec3((gl_FragCoord.x-128.0)/63.0,(gl_FragCoord.y-16.0)/13.0,(gl_FragCoord.x+gl_FragCoord.y-44.0)/23.0);
-        int level=min(int(gl_FragCoord.y)/4,6);
-        float scale=float(1<<level),size=64.0/scale;
-        vec3 q=mod(fract(p)*size+size-0.5,size);
-        vec3 a=floor(q),b=mod(a+1.0,size);
-        // The mean of each group of consecutive coordinates is analytic.
-        // This checks 3D mip filtering too, without reproducing atlas UVs.
-        vec3 expected=(mix(a,b,fract(q))*scale+0.5*(scale-1.0))*4.0/255.0;
-        vec3 actual=cloudNoiseLevel(p,level);
+        int row=int(gl_FragCoord.y),column=int(gl_FragCoord.x);
+        float lod=float(row/8)+float(row%8)/8.0;
+        if(row>=64) {
+            // Exact seams, both sides, and base-level texel centres on each
+            // axis. Integer translations exercise repeat beyond the unit cube.
+            const float offsets[5]=float[](-0.00001,0.0,0.00001,-0.5/64.0,0.5/64.0);
+            p[((row-64)/8)%3]=float((column/5)%5-2)+offsets[column%5];
+            lod=float(row%8);
+        }
+        float footprint=exp2(lod)/64.0;
+        if(row>=88) {footprint=float(column%5-2)*0.001;lod=0.0;}
+        lod=clamp(lod,0.0,6.0);
+        vec3 expected=mix(expectedLevel(p,int(lod)),expectedLevel(p,min(int(lod)+1,6)),fract(lod));
+        vec3 actual=cloudNoiseAt(p,footprint);
         bad=any(greaterThan(abs(actual-expected),vec3(0.003)))||any(isnan(actual));
     } else {
         int c=int(gl_FragCoord.x)%8;
@@ -75,7 +89,7 @@ void main() {
 		t.Fatal(err)
 	}
 	g := &cloudGeometryProbe{t: t, code: code}
-	e, err := glyph.New(g, glyph.WithTitle("Cloud volume regression"), glyph.WithWindowSize(256, 64), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithMaxFrames(4))
+	e, err := glyph.New(g, glyph.WithTitle("Cloud volume regression"), glyph.WithWindowSize(256, 128), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithMaxFrames(4))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,11 +126,11 @@ func (g *cloudGeometryProbe) Init(e *glyph.Engine) error {
 			}
 		}
 	}
-	texture, err := e.Renderer().CreateTextureLinear(packCloudNoise(volume), cloudNoiseWidth, cloudNoiseHeight)
+	texture, err := newCloudNoiseTexture(e.Renderer(), volume)
 	if err != nil {
 		return err
 	}
-	pass, err := e.Renderer().CreateAppPass(renderer.AppPassDesc{Name: "cloud diagnostic", Stage: renderer.StageBeforeTonemap, Load: true, Fullscreen: true, Vert: shaders.DepthResolveVertSpv, Frag: g.code, Reads: []*renderer.Texture{texture, texture}, Params: 32})
+	pass, err := e.Renderer().CreateAppPass(renderer.AppPassDesc{Name: "cloud diagnostic", Stage: renderer.StageBeforeTonemap, Load: true, Fullscreen: true, Vert: shaders.DepthResolveVertSpv, Frag: g.code, Reads: []*renderer.Texture{texture, texture}, Reads3D: []int{0, 1}, Params: 32})
 	if err != nil {
 		return err
 	}
@@ -133,8 +147,8 @@ func (g *cloudGeometryProbe) Update(e *glyph.Engine, _ float32) {
 			g.t.Error(err)
 		} else {
 			bad := 0
-			for y := 0; y < 64; y++ {
-				for x := 0; x < 256; x++ {
+			for y := 0; y < im.Bounds().Dy(); y++ {
+				for x := 0; x < im.Bounds().Dx(); x++ {
 					c := im.RGBAAt(x, y)
 					if c.R > 10 || c.G < 100 {
 						bad++

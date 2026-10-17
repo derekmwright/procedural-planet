@@ -36,7 +36,7 @@ func NewCloudShadow(r *renderer.Renderer, noise *renderer.Texture) (*CloudShadow
 	}
 	pass, err := r.CreateAppCompute(renderer.AppComputeDesc{
 		Name: "cloud shadows", Stage: renderer.StageBeforeScene, Comp: cloudShadowCompute,
-		Reads: []*renderer.Texture{noise, noise}, Writes: []*renderer.RenderTarget{target},
+		Reads: []*renderer.Texture{noise, noise}, Reads3D: []int{0, 1}, Writes: []*renderer.RenderTarget{target},
 		Timed: true, Params: 32,
 	})
 	if err != nil {

@@ -402,8 +402,10 @@ the existing application-pass APIs without an engine dependency change.
 Engine improvements filed for subsequent work:
 
 - [#190](https://github.com/derekmwright/glyphengine/issues/190): sampled 3D
-  textures for cached noise and volume mip filtering. The current fallback is
-  a 2D slice atlas with an explicit three-dimensional mip chain; measured above.
+  textures for cached noise and volume mip filtering. Adopted on 2026-10-17 with
+  engine `af525925956a`: native 64³ RGBA8 volume, preserving the supplied seven
+  mip levels. The earlier measurements above used the 2D slice atlas. New
+  timings are deferred while a local LLM shares the GPU.
 - [#191](https://github.com/derekmwright/glyphengine/issues/191): additional
   scene-wide texture bindings for cloud shadows on terrain/ocean. The current
   four bindings carry the sun table, two wave fields, and caustics. Cloud rendering

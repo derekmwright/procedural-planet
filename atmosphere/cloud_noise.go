@@ -1,14 +1,23 @@
 package atmosphere
 
-import "math"
+import (
+	"math"
 
-// A periodic volume with a true 3D mip chain, packed into a 2D slice atlas.
-// Each level has its own one-voxel gutters. The engine exposes only 2D images;
-// hardware 2D mip generation would blend unrelated slices/levels together.
+	"github.com/derekmwright/glyphengine/renderer"
+)
+
+// A periodic RGBA8 volume with a complete 3D mip chain. Keep the explicit
+// rounded box means so switching to native sampling preserves the seeded field
+// at every level, independently of device mip-generation rounding.
 const cloudNoiseSize = 64
-const cloudNoiseTile = cloudNoiseSize + 2
-const cloudNoiseWidth = cloudNoiseTile * 8
-const cloudNoiseHeight = 723 // rows: 528 + 136 + 36 + 10 + 6 + 4 + 3
+
+func newCloudNoiseTexture(r *renderer.Renderer, volume []byte) (*renderer.Texture, error) {
+	return r.CreateTexture3D(volume, cloudNoiseSize, cloudNoiseSize, cloudNoiseSize, renderer.Texture3DOptions{
+		Format: renderer.Texture3DRGBA8, Filter: renderer.FilterLinear,
+		WrapX: renderer.WrapRepeat, WrapY: renderer.WrapRepeat, WrapZ: renderer.WrapRepeat,
+		Mips: cloudNoiseMips(volume),
+	})
+}
 
 func cloudHash(x, y, z int, seed uint64) uint32 {
 	h := uint32(x)*1597334677 ^ uint32(y)*3812015801 ^ uint32(z)*2798796415 ^ uint32(seed) ^ uint32(seed>>32)
@@ -57,7 +66,7 @@ func cloudCell(x, y, z float64, period int, seed uint64) float64 {
 	return 1 - math.Min(math.Sqrt(nearest), 1)
 }
 
-func cloudNoiseAtlas(seed uint64) []byte {
+func cloudNoiseVolume(seed uint64) []byte {
 	volume := make([]byte, cloudNoiseSize*cloudNoiseSize*cloudNoiseSize*4)
 	pack := func(v float64) byte { return byte(math.Round(math.Max(0, math.Min(1, v)) * 255)) }
 	for z := 0; z < cloudNoiseSize; z++ {
@@ -76,28 +85,13 @@ func cloudNoiseAtlas(seed uint64) []byte {
 			}
 		}
 	}
-	return packCloudNoise(volume)
+	return volume
 }
 
-func packCloudNoise(volume []byte) []byte {
-	atlas := make([]byte, cloudNoiseWidth*cloudNoiseHeight*4)
-	offset := 0
-	for size := cloudNoiseSize; size >= 1; size /= 2 {
-		tile, columns := size+2, min(8, size)
-		for z := 0; z < size; z++ {
-			for y := 0; y < tile; y++ {
-				for x := 0; x < tile; x++ {
-					xv, yv := (x+size-1)%size, (y+size-1)%size
-					src := ((z*size+yv)*size + xv) * 4
-					dst := ((offset+(z/columns)*tile+y)*cloudNoiseWidth + (z%columns)*tile + x) * 4
-					copy(atlas[dst:dst+4], volume[src:src+4])
-				}
-			}
-		}
-		offset += ((size + columns - 1) / columns) * tile
-		if size == 1 {
-			break
-		}
+// Levels below the base, in the same X-fastest order as CreateTexture3D.
+func cloudNoiseMips(volume []byte) [][]byte {
+	levels := make([][]byte, 0, 6)
+	for size := cloudNoiseSize; size > 1; size /= 2 {
 		n := size / 2
 		next := make([]byte, n*n*n*4)
 		for z := 0; z < n; z++ {
@@ -117,7 +111,8 @@ func packCloudNoise(volume []byte) []byte {
 				}
 			}
 		}
+		levels = append(levels, next)
 		volume = next
 	}
-	return atlas
+	return levels
 }

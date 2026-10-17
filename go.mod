@@ -3,7 +3,7 @@ module github.com/derekmwright/procedural-planet
 go 1.27.0
 
 require (
-	github.com/derekmwright/glyphengine v0.0.0-20261017110142-45ce4ed15263
+	github.com/derekmwright/glyphengine v0.0.0-20261017122306-af525925956a
 	github.com/go-gl/mathgl v1.2.0
 )
 

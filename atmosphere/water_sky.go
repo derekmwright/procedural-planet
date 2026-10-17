@@ -43,7 +43,7 @@ func NewWaterSky(r *renderer.Renderer, clouds *CloudPasses) (*WaterSky, error) {
 	}
 	build, err := r.CreateAppCompute(renderer.AppComputeDesc{
 		Name: "water sky", Stage: renderer.StageBeforeScene, Comp: waterSkyCompute,
-		Reads: []*renderer.Texture{clouds.noise, clouds.noise}, Writes: ping[:],
+		Reads: []*renderer.Texture{clouds.noise, clouds.noise}, Reads3D: []int{0, 1}, Writes: ping[:],
 		ReadsShadows: true, Timed: true, Params: 32,
 	})
 	if err != nil {

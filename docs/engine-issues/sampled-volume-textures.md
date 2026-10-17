@@ -2,6 +2,11 @@
 
 Filed as [GlyphEngine #190](https://github.com/derekmwright/glyphengine/issues/190).
 
+Implemented upstream and adopted on 2026-10-17 at engine `af525925956a`.
+Cloud view, cloud shadows and water sky now use `CreateTexture3D` with supplied
+mips, linear filtering and repeat on all axes. See [clouds](../clouds.md).
+The original request below is retained as historical context.
+
 Procedural Planet is preparing a spherical volumetric cloud layer. Its view
 march and light march need a stable, seeded density field without evaluating
 several procedural noise octaves at every sample. A native sampled volume would

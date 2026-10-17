@@ -26,9 +26,9 @@ type CloudPasses struct {
 }
 
 // NewCloudPasses requires at least five shared shader texture slots. The full
-// showcase registers seventeen application timers and requests a capacity of 32.
+// showcase registers 24 application timers and requests a capacity of 32.
 func NewCloudPasses(r *renderer.Renderer, scale float32, seed uint64, composed *renderer.RenderTarget) (*CloudPasses, error) {
-	noise, err := r.CreateTextureLinear(cloudNoiseAtlas(seed), cloudNoiseWidth, cloudNoiseHeight)
+	noise, err := newCloudNoiseTexture(r, cloudNoiseVolume(seed))
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func NewCloudPasses(r *renderer.Renderer, scale float32, seed uint64, composed *
 		return nil, err
 	}
 	depth := r.SceneDepth()
-	volume, err := r.CreateAppCompute(renderer.AppComputeDesc{Name: "cloud volume", Stage: renderer.StageBeforeBloom, Comp: cloudVolume, Reads: []*renderer.Texture{depth, noise}, Writes: []*renderer.RenderTarget{light, transmission}, ReadsShadows: true, Timed: true, Params: 32})
+	volume, err := r.CreateAppCompute(renderer.AppComputeDesc{Name: "cloud volume", Stage: renderer.StageBeforeBloom, Comp: cloudVolume, Reads: []*renderer.Texture{depth, noise}, Reads3D: []int{1}, Writes: []*renderer.RenderTarget{light, transmission}, ReadsShadows: true, Timed: true, Params: 32})
 	if err != nil {
 		return nil, err
 	}
