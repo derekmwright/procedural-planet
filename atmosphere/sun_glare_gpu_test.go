@@ -202,7 +202,9 @@ func (g *sunGlareProbe) check(im *image.RGBA, stage int) {
 	for y := 0; y < 256; y++ {
 		for x := 0; x < 256; x++ {
 			radius := math.Hypot(float64(x)+0.5-128, float64(y)+0.5-128)
-			if radius < 14 || radius > 48 { // Outside the disc, inside the glare.
+			// Outside the antialiased disc, within the compact corona/spoke roots.
+			// The old 14..48 ring mostly measures the broad halo we removed.
+			if radius < 7 || radius > 24 {
 				continue
 			}
 			energy += linear(im.RGBAAt(x, y).R) - linear(g.baseline.RGBAAt(x, y).R)

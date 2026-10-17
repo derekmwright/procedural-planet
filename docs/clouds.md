@@ -59,6 +59,10 @@ The cloud composite stores direct solar luminance in its otherwise unused alpha
 channel. Terrain depth, the solid planet and analytic ocean reject the source;
 RGB cloud/air transmission attenuates it. The existing present pass averages 32
 fixed samples over the visible disc and applies a bounded angular glare profile.
+The corona stays close to the disc. Six soft spokes start broad at its rim and
+narrow toward their tips; their width is measured across each ray rather than
+as a fixed azimuth, which would widen into a V with distance. The previous broad
+halo tail is removed so the optical effect does not bleach a large patch of sky.
 This is an optical display effect, separate from volumetric scattering. Bright
 cloud rims and water reflections cannot create a false sun burst. Partial disc
 occlusion fades its strength; a fully hidden sun produces none. Source hue is
@@ -71,6 +75,9 @@ with clear, thin and opaque clouds, bright opaque foreground/cloud pixels,
 half-disc occlusion, solid-planet and ocean blockage, toggles and target
 recreation. Projection checks cover portrait through ultrawide views and a sun
 behind the camera. Reproduction captures are under `captures/sun-glare`.
+Flare-shape comparisons use the centered `sun-burst` capture preset under
+`captures/sun-burst-shape`, including an R-off reference to separate the optical
+effect from the existing atmospheric glow.
 GPU timing comparisons for this change are deferred while a local LLM shares
 the GPU; no performance delta is claimed.
 
