@@ -15,6 +15,7 @@ layout(push_constant) uniform PushConstants {
 #include "parameters.glsl"
 #include "common.glsl"
 #include "ocean.glsl"
+#include "sun-disc.glsl"
 
 void main() {
     vec4 world=pc.invVP*vec4(fragUV*2.0-1.0,0.0,1.0);
@@ -23,7 +24,7 @@ void main() {
     vec3 sunDir=normalize(pc.sunDir.xyz);
     // Derivatives must execute before ocean/underwater early returns.
     // Divergent neighbor lanes otherwise produce stray sun-disc pixels.
-    float separation=atan(length(cross(dir,sunDir)),dot(dir,sunDir));
+    float separation=sunSeparation(dir,sunDir);
     float aa=max(fwidth(separation),0.00015);
     vec3 background=vec3(0.001,0.002,0.004);
     float limit=PLANET_RADIUS*30.0;
@@ -44,7 +45,7 @@ void main() {
     Air air=DEFERRED_CLOUDS?Air(vec3(0),vec3(1)):
         integrateAir(EYE_PLANET,dir,limit,sunDir,pc.sunColor.rgb);
     // Slightly enlarged angular disc, constant in space and at the surface.
-    float disc=1.0-smoothstep(0.009-aa,0.009+aa,separation);
-    if (!blocked) background += disc*pc.sunColor.rgb*12.0;
+    float disc=sunDisc(separation,aa);
+    if (!blocked) background += disc*pc.sunColor.rgb*SUN_DISC_RADIANCE;
     outColor=vec4(oceanComposite(background*air.transmittance+air.light,background,dir,limit),1.0);
 }

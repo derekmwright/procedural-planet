@@ -9,13 +9,18 @@ layout(set=2,binding=3) uniform sampler2D airTransmission;
 #include "engine-lighting.glsl"
 #include "common.glsl"
 #include "air-endpoint.glsl"
+#include "sun-disc.glsl"
 layout(location=0) out vec4 outColor;
 void main() {
     ivec2 full=textureSize(sceneDepth,0),pixel=ivec2(gl_FragCoord.xy);
     vec2 uv=(vec2(pixel)+0.5)/vec2(full);
+    float separation=sunSeparation(viewDirection(uv),normalize(pc.sunDir.xyz));
+    // As in the sky, derivatives precede divergent endpoint/edge branches.
+    float disc=sunDisc(separation,max(fwidth(separation),0.00015));
     vec3 color=texelFetch(sceneColor,pixel,0).rgb;
-    float endpoint=airEndpoint(uv,texelFetch(sceneDepth,pixel,0).r);
-    if(endpoint<0.0) { outColor=vec4(color,1); return; }
+    float depth=texelFetch(sceneDepth,pixel,0).r;
+    float endpoint=airEndpoint(uv,depth);
+    if(endpoint<0.0) { outColor=vec4(color,0); return; }
     ivec2 size=textureSize(airLight,0);
     vec2 low=uv*vec2(size)-0.5, f=fract(low);
     ivec2 base=ivec2(floor(low));
@@ -48,5 +53,12 @@ void main() {
         Air air=integrateAir(EYE_PLANET,viewDirection(uv),endpoint,normalize(pc.sunDir.xyz),pc.sunColor.rgb);
         light=air.light; transmission=air.transmittance;
     }
-    outColor=vec4(color*transmission+light,1);
+    // Alpha carries only the transmitted solar source luminance. Geometry,
+    // the planet and analytic ocean must never seed the optical sun glare;
+    // neither may bright cloud rims or reflected sunlight. Cloud extinction
+    // attenuates the source before the final present pass spreads its light.
+    float solar=0.0;
+    if(DEFERRED_CLOUDS&&depth==0.0&&endpoint>=PLANET_RADIUS*30.0)
+        solar=disc*SUN_DISC_RADIANCE*dot(pc.sunColor.rgb*transmission,SUN_LUMINANCE);
+    outColor=vec4(color*transmission+light,solar);
 }

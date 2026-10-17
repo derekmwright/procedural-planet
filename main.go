@@ -267,8 +267,8 @@ func (g *game) camera(e *glyph.Engine) {
 		panic(fmt.Sprintf("upload planet shader parameters: %v", err))
 	}
 	var rays float32
-	// Cloud mode integrates sun scattering in the volume. The engine's earlier
-	// screen-space halo has no cloud visibility and would double that lighting.
+	// Cloud mode integrates scattering in the volume and adds optical sun glare
+	// after composition. The engine's earlier shafts lack cloud visibility.
 	if parameters.Rendering[3] == 0 && g.sunRaysEnabled && g.atmosphereEnabled && (!g.oceanEnabled || math.Sqrt(g.cam.eye.Dot(g.cam.eye)) > g.world.Radius+g.seaLevel) {
 		// Keep the existing screen-space shafts in space. Account for the
 		// horizon dipping below the local tangent as the camera climbs.
@@ -435,7 +435,7 @@ func run() error {
 	materials := flag.Bool("materials", true, "enable foreground surface detail (M toggles)")
 	shadows := flag.Bool("shadows", true, "enable mountain, terrain and rock shadows (H toggles)")
 	underwaterShadows := flag.Bool("underwater-shadows", false, "retain cast shadows underwater (default fades them out over the first 2 m)")
-	rays := flag.Bool("sun-rays", true, "enable atmospheric screen-space sun shafts")
+	rays := flag.Bool("sun-rays", true, "enable sun glare, clear-air screen-space shafts, and underwater shafts")
 	heading := flag.Float64("heading", 0, "starting flight heading in degrees east of north")
 	pitch := flag.Float64("pitch", -0.08*180/math.Pi, "starting flight pitch in degrees above horizon (-85 to 85)")
 	waterPasses := flag.Bool("water-passes", true, "half-resolution underwater scattering (false uses full-resolution baseline)")

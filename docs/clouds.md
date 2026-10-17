@@ -50,8 +50,29 @@ mapping. This uses the existing engine resolve, adding no passes or targets.
 
 The earlier screen-space sun shafts do not run in cloud mode: they execute
 before cloud composition and have no cloud visibility. Physical view scattering
-uses the existing terrain-shadow visibility and cloud extinction. **R** still
-controls the extra clear-air screen-space effect and underwater shafts.
+uses the existing terrain-shadow visibility and cloud extinction. A compact
+optical sun glow and soft burst are added **after** cloud composition, before
+tone mapping. **R** / `-sun-rays=false` controls this glare, the extra clear-air
+screen-space effect, and underwater shafts.
+
+The cloud composite stores direct solar luminance in its otherwise unused alpha
+channel. Terrain depth, the solid planet and analytic ocean reject the source;
+RGB cloud/air transmission attenuates it. The existing present pass averages 32
+fixed samples over the visible disc and applies a bounded angular glare profile.
+This is an optical display effect, separate from volumetric scattering. Bright
+cloud rims and water reflections cannot create a false sun burst. Partial disc
+occlusion fades its strength; a fully hidden sun produces none. Source hue is
+estimated from the composed solar pixels, with luminance fixed by the direct
+source mask. Sampling is limited to the visible screen, so glare fades as the
+disc leaves the frame. There is no temporal history, extra pass or extra target.
+
+`TestSunGlareOcclusionGPU` exercises the production composite/present shaders
+with clear, thin and opaque clouds, bright opaque foreground/cloud pixels,
+half-disc occlusion, solid-planet and ocean blockage, toggles and target
+recreation. Projection checks cover portrait through ultrawide views and a sun
+behind the camera. Reproduction captures are under `captures/sun-glare`.
+GPU timing comparisons for this change are deferred while a local LLM shares
+the GPU; no performance delta is claimed.
 
 Cloud shadows are enabled by default. **H** disables them together with terrain
 shadows; **C** or **F** also disables them. Broad cloud shading stays active

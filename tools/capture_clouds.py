@@ -21,6 +21,7 @@ SCENES = {
     "underwater": ["-sea-level=150.4257", "-altitude=5", "-flight", "-heading=-72", "-pitch=12"],
     "water-window": ["-sea-level=150.4257", "-altitude=24", "-flight", "-heading=-72", "-pitch=65"],
     "water-distance": ["-sea-level=137.3", "-altitude=220", "-flight", "-heading=-72", "-pitch=-28"],
+    "sun-ridge": ["-longitude=54", "-latitude=0", "-altitude=100", "-flight", "-heading=-63.2", "-pitch=-4.58"],
 }
 
 def main():
@@ -36,7 +37,7 @@ def main():
     parser.add_argument("--exposure", type=float, default=1)
     parser.add_argument("--off", action="store_true")
     parser.add_argument("--no-shadows", action="store_true", help="cloud-shadow ablation; keep the visible clouds")
-    parser.add_argument("--no-rays", action="store_true", help="disable the extra screen-space shafts in clear-air comparisons")
+    parser.add_argument("--no-rays", action="store_true", help="disable sun glare, clear-air screen-space shafts, and underwater shafts")
     parser.add_argument("--no-reflections", action="store_true", help="use the inline clear-air water reference")
     parser.add_argument("--no-wave-filtering", action="store_true", help="use the previous surface normal fade")
     args = parser.parse_args()

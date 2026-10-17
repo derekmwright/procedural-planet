@@ -40,7 +40,7 @@ func NewAirPasses(r *renderer.Renderer, scale, cloudScale float32, seed uint64) 
 	if err != nil {
 		return nil, err
 	}
-	composed, err := r.CreateRenderTarget(renderer.RenderTargetDesc{Name: "atmosphere composed scene", Format: renderer.TargetRGBA16F, Scale: 1})
+	composed, err := r.CreateRenderTarget(renderer.RenderTargetDesc{Name: "atmosphere composed scene", Format: renderer.TargetRGBA16F, Scale: 1, Filter: renderer.FilterLinear})
 	if err != nil {
 		return nil, err
 	}
@@ -89,18 +89,64 @@ func (p *AirPasses) Update(inverseVP mgl32.Mat4, sun, color [3]float32) error {
 	if err := p.transmission.SetPushConstants(data[:]); err != nil {
 		return err
 	}
-	return p.composite.SetPushConstants(data[:])
+	if err := p.composite.SetPushConstants(data[:]); err != nil {
+		return err
+	}
+	return p.present.SetPushConstants(data[:])
 }
 
-func airFrameBytes(inverseVP mgl32.Mat4, sun, color [3]float32, scale float32) [112]byte {
-	var values [28]float32
+func airFrameBytes(inverseVP mgl32.Mat4, sun, color [3]float32, scale float32) [128]byte {
+	var values [32]float32
 	copy(values[:16], inverseVP[:])
 	copy(values[16:19], sun[:])
 	copy(values[20:23], color[:])
 	values[24] = scale
-	var data [112]byte
+	center, axes, valid := projectSunDisc(inverseVP, mgl32.Vec3(sun))
+	if valid {
+		values[25], values[26], values[27] = center[0], center[1], 1
+		copy(values[28:], axes[:])
+	}
+	var data [128]byte
 	for i, v := range values {
 		binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(v))
 	}
 	return data
+}
+
+// Project the angular solar disc once on the CPU. The rendering camera is at
+// the origin; w=0 projects a direction, including when the planet is rebased.
+// Sample axes follow a tangent plane, accurate over the 0.009-radian disc.
+func projectSunDisc(inverseVP mgl32.Mat4, sun mgl32.Vec3) (center mgl32.Vec2, axes mgl32.Vec4, valid bool) {
+	if sun.LenSqr() == 0 {
+		return
+	}
+	sun = sun.Normalize()
+	viewProjection := inverseVP.Inv()
+	project := func(direction mgl32.Vec3) (mgl32.Vec2, bool) {
+		p := viewProjection.Mul4x1(direction.Vec4(0))
+		if p[3] <= 1e-5 {
+			return mgl32.Vec2{}, false
+		}
+		return mgl32.Vec2{0.5 + 0.5*p[0]/p[3], 0.5 + 0.5*p[1]/p[3]}, true
+	}
+	center, valid = project(sun)
+	if !valid || center[0] < -0.1 || center[0] > 1.1 || center[1] < -0.1 || center[1] > 1.1 {
+		valid = false
+		return
+	}
+	u := sun.Cross(mgl32.Vec3{0, 1, 0})
+	if u.LenSqr() < 0.001 {
+		u = sun.Cross(mgl32.Vec3{1, 0, 0})
+	}
+	u = u.Normalize().Mul(float32(math.Tan(0.009)))
+	v := sun.Cross(u)
+	pu, okU := project(sun.Add(u))
+	mu, okMU := project(sun.Sub(u))
+	pv, okV := project(sun.Add(v))
+	mv, okMV := project(sun.Sub(v))
+	// Symmetric axes avoid biasing the source footprint toward one side of
+	// the disc in wide views near a screen edge.
+	axes = mgl32.Vec4{(pu[0] - mu[0]) * 0.5, (pu[1] - mu[1]) * 0.5, (pv[0] - mv[0]) * 0.5, (pv[1] - mv[1]) * 0.5}
+	valid = okU && okMU && okV && okMV
+	return
 }

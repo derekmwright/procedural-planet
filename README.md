@@ -210,8 +210,12 @@ the effect concentrated near the sun. These are artistic settings, not physical
 scattering coefficients. The pass samples scene brightness without depth, so
 it approximates rays around ridgelines rather than tracing terrain shadows
 through the atmosphere. Cloud mode disables that earlier screen-space effect
-and integrates volumetric scattering with cloud extinction instead. The existing
-terrain-shadowed atmospheric scattering and underwater shafts remain available.
+and integrates volumetric scattering with cloud extinction instead. A compact
+sun glow and soft burst are composed after clouds, driven by the visible solar
+disc, so terrain and cloud cover can attenuate them. **R** controls this glare
+as well. The existing terrain-shadowed atmospheric scattering and underwater
+shafts remain available. See [clouds](docs/clouds.md) for the source mask and
+occlusion checks.
 
 To reproduce a sun-facing view, use `-flight -heading -63.2 -longitude 51.8427734
 -latitude 0 -altitude 1000`. Heading is degrees east of local north. Changing
