@@ -72,10 +72,14 @@ occlusion fades its strength; a fully hidden sun produces none. Source hue is
 estimated from the composed solar pixels, with luminance fixed by the direct
 source mask. Sampling is limited to the visible screen, so glare fades as the
 disc leaves the frame. There is no temporal history, extra pass or extra target.
+The present pass also checks the destination against terrain depth, the solid
+planet and analytic water. A partly exposed sun cannot paint the artistic
+corona onto a mountain in front of it. This sky-only mask does not affect the
+volumetric light integrated between the camera and terrain.
 
 `TestSunGlareOcclusionGPU` exercises the production composite/present shaders
 with clear, thin and opaque clouds, bright opaque foreground/cloud pixels,
-half-disc occlusion, solid-planet and ocean blockage, toggles and target
+half-disc occlusion (including zero flare on the opaque half), solid-planet and ocean blockage, toggles and target
 recreation. Projection checks cover portrait through ultrawide views and a sun
 behind the camera. Reproduction captures are under `captures/sun-glare`.
 Flare-shape comparisons use the centered `sun-burst` capture preset under

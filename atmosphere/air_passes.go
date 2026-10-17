@@ -64,7 +64,7 @@ func NewAirPasses(r *renderer.Renderer, scale, cloudScale float32, seed uint64) 
 	if err != nil {
 		return nil, err
 	}
-	present, err := r.CreateAppPass(renderer.AppPassDesc{Name: "air present", Stage: renderer.StageBeforeBloom, Load: true, Fullscreen: true, Vert: shaders.DepthResolveVertSpv, Frag: airPresent, Reads: []*renderer.Texture{composed.Texture()}, Timed: true})
+	present, err := r.CreateAppPass(renderer.AppPassDesc{Name: "air present", Stage: renderer.StageBeforeBloom, Load: true, Fullscreen: true, Vert: shaders.DepthResolveVertSpv, Frag: airPresent, Reads: []*renderer.Texture{composed.Texture(), depth}, Timed: true})
 	if err != nil {
 		return nil, err
 	}

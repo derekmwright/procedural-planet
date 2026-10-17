@@ -20,6 +20,7 @@ import (
 // Feed controlled opaque depth and cloud transmission through the production
 // composite AND present shaders. Bright foreground/cloud pixels must not seed
 // glare, while transmitted and partially occluded sunlight must attenuate it.
+// A visible portion of the sun must not paint glare onto an opaque foreground.
 func TestSunGlareOcclusionGPU(t *testing.T) {
 	if os.Getenv("PLANET_GPU_TEST") != "1" {
 		t.Skip("set PLANET_GPU_TEST=1 for Vulkan shader checks")
@@ -120,7 +121,7 @@ func (g *sunGlareProbe) Init(e *glyph.Engine) error {
 	if err != nil {
 		return err
 	}
-	g.present, err = r.CreateAppPass(renderer.AppPassDesc{Name: "glare production present", Stage: renderer.StageBeforeBloom, Load: true, Fullscreen: true, Vert: shaders.DepthResolveVertSpv, Frag: airPresent, Reads: []*renderer.Texture{composed.Texture()}})
+	g.present, err = r.CreateAppPass(renderer.AppPassDesc{Name: "glare production present", Stage: renderer.StageBeforeBloom, Load: true, Fullscreen: true, Vert: shaders.DepthResolveVertSpv, Frag: airPresent, Reads: []*renderer.Texture{composed.Texture(), reads[1]}})
 	return err
 }
 
@@ -199,6 +200,7 @@ func (g *sunGlareProbe) check(im *image.RGBA, stage int) {
 		return math.Pow((x+0.055)/1.055, 2.4)
 	}
 	energy, count := 0.0, 0
+	foreground, foregroundCount, reference := 0.0, 0, 0.0
 	for y := 0; y < 256; y++ {
 		for x := 0; x < 256; x++ {
 			radius := math.Hypot(float64(x)+0.5-128, float64(y)+0.5-128)
@@ -207,7 +209,18 @@ func (g *sunGlareProbe) check(im *image.RGBA, stage int) {
 			if radius < 7 || radius > 24 {
 				continue
 			}
-			energy += linear(im.RGBAAt(x, y).R) - linear(g.baseline.RGBAAt(x, y).R)
+			added := linear(im.RGBAAt(x, y).R) - linear(g.baseline.RGBAAt(x, y).R)
+			if stage == 4 {
+				if x < 128 {
+					foreground += math.Abs(added)
+					foregroundCount++
+					continue
+				}
+				// Compare the exposed half against the same sky pixels in the
+				// fully visible case, independently of foreground coverage.
+				reference += linear(g.full.RGBAAt(x, y).R) - linear(g.baseline.RGBAAt(x, y).R)
+			}
+			energy += added
 			count++
 		}
 	}
@@ -220,6 +233,12 @@ func (g *sunGlareProbe) check(im *image.RGBA, stage int) {
 		return
 	}
 	ratio := energy / g.fullEnergy
+	if stage == 4 {
+		ratio = energy / (reference / float64(count))
+		if leak := foreground / float64(foregroundCount); leak > 0.0001 {
+			g.t.Errorf("partly visible sun paints glare over foreground: %.6f", leak)
+		}
+	}
 	g.t.Logf("state %d: glare energy %.6f, fraction %.4f", stage, energy, ratio)
 	switch stage {
 	case 2:

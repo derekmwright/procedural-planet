@@ -1,8 +1,11 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 layout(set=2,binding=0) uniform sampler2D composed;
+layout(set=2,binding=1) uniform sampler2D sceneDepth;
 #include "air-frame.glsl"
 #include "parameters.glsl"
+#include "common.glsl"
+#include "air-endpoint.glsl"
 #include "sun-disc.glsl"
 layout(location=0) out vec4 outColor;
 
@@ -12,6 +15,13 @@ vec3 sunGlare(vec2 uv,ivec2 size) {
     vec3 direction=normalize((pc.inverseVP*vec4(uv*2.0-1.0,0,1)).xyz);
     float angle=sunSeparation(direction,normalize(pc.sunDir.xyz));
     if(angle>=0.07) return vec3(0);
+
+    // Source visibility alone is insufficient at a ridgeline: the exposed
+    // portion of the disc would spread its corona onto the mountain below it.
+    // Keep this artistic burst in the sky. Actual atmospheric shafts in front
+    // of terrain are already integrated to the surface by the volume pass.
+    float depth=texelFetch(sceneDepth,ivec2(uv*vec2(size)),0).r;
+    if(airEndpoint(uv,depth)<PLANET_RADIUS*30.0) return vec3(0);
 
     // Most optical glare belongs in the soft corona. Faint, unequal diffraction
     // axes give it a burst without cutting a regular bright star out of a dark
