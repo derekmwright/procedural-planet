@@ -407,18 +407,20 @@ Engine improvements filed for subsequent work:
   mip levels. The earlier measurements above used the 2D slice atlas. New
   timings are deferred while a local LLM shares the GPU.
 - [#191](https://github.com/derekmwright/glyphengine/issues/191): additional
-  scene-wide texture bindings for cloud shadows on terrain/ocean. The current
-  four bindings carry the sun table, two wave fields, and caustics. Cloud rendering
-  can begin with pass-local inputs while this shared-lighting interface improves.
+  scene-wide texture bindings. Adopted: seven slots carry the sun table, two
+  wave fields, caustics, cloud shadows and two water-sky fields.
 - [#192](https://github.com/derekmwright/glyphengine/issues/192): more than sixteen
-  named application GPU timers. The current water/air/cloud pipeline fills all
-  sixteen registered slots, even though several modes are mutually exclusive.
-  Sharing atmospheric presentation made this milestone fit. Later passes should
-  remain separately measurable rather than dropping instrumentation.
+  named application GPU timers. Adopted: the showcase requests capacity 32 and
+  registers 27 timers with all effects enabled, including land-reflection
+  source/trace/composite passes.
+- [#200](https://github.com/derekmwright/glyphengine/issues/200): render-target mip
+  allocation and subresource views. Merged in engine main on 2026-10-17; not yet
+  adopted. It can replace the wave/sky atlases and their manual level filtering.
 
-The existing intermediate-cascade request #189 improves terrain-shadow detail,
-and #187 adds application-pass pipeline counters. Neither is a cloud blocker;
-existing per-pass GPU timers were sufficient to profile the first cloud layer.
+Intermediate cascades (#189) also merged on 2026-10-17 and await app adoption;
+their additional shadow cost still needs measurement. The app remains pinned
+to `af525925956a` for the reflection colour/roughness fix. Older requests are not
+all closed: shared vertex-deformation inputs (#186) remain open as of this check.
 
 ## Measured results, 2026-10-02
 

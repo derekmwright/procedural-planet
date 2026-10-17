@@ -403,9 +403,9 @@ the actual cloud and atmosphere field in nearby reflections and underwater
 refraction; distant water retains a clear-air fallback. Use
 `-water-reflections=false` or `-wave-filtering=false` for comparisons.
 Nearby visible terrain and rocks also reflect in the water through a bounded
-screen-space pass. It keeps the sky reflection for off-screen or hidden land
-and skips underwater views. Use `-water-land-reflections=false` to compare.
-Terrain and rocks are not reflected. There is no wave geometry or buoyancy.
+screen-space pass. Wave roughness softens the land reflection; off-screen or
+hidden land keeps the sky fallback. It skips underwater views. Use
+`-water-land-reflections=false` to compare. There is no wave geometry or buoyancy.
 Underwater views attenuate sunlight and visibility with depth; the approximate
 refracted sky window becomes a dark underside beyond the critical angle.
 WATER_CLARITY in atmosphere/ocean.glsl is now 2.0: light and visibility

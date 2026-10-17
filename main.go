@@ -121,7 +121,7 @@ func (g *game) Init(e *glyph.Engine) error {
 				return err
 			}
 		}
-		g.airPasses, err = atmosphere.NewAirPasses(e.Renderer(), float32(g.airScale), float32(g.cloudScale), g.world.Seed)
+		g.airPasses, err = atmosphere.NewAirPasses(e.Renderer(), float32(g.airScale), float32(g.cloudScale), g.world.Seed, g.waterLand)
 		if err != nil {
 			return err
 		}

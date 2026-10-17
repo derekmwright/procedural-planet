@@ -130,9 +130,11 @@ holes, but cannot recover missing detail from the far map: coarse shadow edges
 remain. Reducing its coverage would lose distant mountain and atmospheric
 shadows; expanding the near map would lose contact detail.
 
-[GlyphEngine #189](https://github.com/derekmwright/glyphengine/issues/189) requests
-optional intermediate cascades while preserving the current default cost and
-documenting the shader interface. A middle 3 km radius map would offer about
+[GlyphEngine #189](https://github.com/derekmwright/glyphengine/issues/189) was
+closed by [PR #204](https://github.com/derekmwright/glyphengine/pull/204), merged
+on 2026-10-17. The engine now offers optional third and fourth cascades while
+preserving the two-map default. This app still pins `af525925956a` and has not
+adopted them yet. A middle 3 km radius map would offer about
 2.93 m texels without changing the two existing coverage endpoints. Its GPU and
 memory cost must be measured before adoption. The local issue proposal is
 [here](engine-issues/intermediate-directional-cascades.md).

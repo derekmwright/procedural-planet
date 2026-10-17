@@ -291,7 +291,7 @@ func (p *performance) draw(e *glyph.Engine) {
 		e.Debugf("GPU water sky %.2f | filter %.2f ms", r.GPUPasses["water sky"], filterMS)
 	}
 	if r.WaterLandReflectionsActive {
-		e.Debugf("GPU water land: trace %.2f | filter %.2f | composite %.2f ms", r.GPUPasses["water land reflection"], r.GPUPasses["water land filter"], r.GPUPasses["water land composite"])
+		e.Debugf("GPU water land: source %.2f | trace %.2f | composite %.2f ms", r.GPUPasses["water land source"], r.GPUPasses["water land reflection"], r.GPUPasses["water land composite"])
 	}
 	if r.GPUPasses["wave field"] > 0 {
 		e.Debugf("GPU wave cache %.2f | focusing %.2f ms", r.GPUPasses["wave field"], r.GPUPasses["water focusing"]+r.GPUPasses["water focusing resolve"]+r.GPUPasses["water focusing blur"]+r.GPUPasses["water focusing filter"]+r.GPUPasses["water focusing history"]+r.GPUPasses["water focusing state"])

@@ -28,7 +28,7 @@ func runCloudLifecycleGPU(t *testing.T, water bool) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	g := &cloudLifecycleProbe{t: t, waterView: water}
-	e, err := glyph.New(g, glyph.WithTitle("Cloud lifecycle regression"), glyph.WithWindowSize(160, 90), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithShaders(Shaders()), glyph.WithShaderTextureSlots(7), glyph.WithMaxFrames(80))
+	e, err := glyph.New(g, glyph.WithTitle("Cloud lifecycle regression"), glyph.WithWindowSize(160, 90), glyph.WithBackgroundWindow(), glyph.WithValidation(true), glyph.WithMSAA(1), glyph.WithVSync(false), glyph.WithShaders(Shaders()), glyph.WithShaderTextureSlots(7), glyph.WithAppTimingCapacity(32), glyph.WithMaxFrames(80))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,13 +55,20 @@ type cloudLifecycleProbe struct {
 	cloudy    *image.RGBA
 	waterView bool
 	waterSky  *WaterSky
+	waterLand *WaterReflections
 }
 
 func (g *cloudLifecycleProbe) Init(e *glyph.Engine) error {
 	e.Scene.Env = cloudTestEnvironment{}
 	e.SetCamera(mgl32.Vec3{}, mgl32.Vec3{0, 0.2, 1}, mgl32.Vec3{0, 1, 0})
 	var err error
-	g.passes, err = NewAirPasses(e.Renderer(), 0.5, 0.5, 7)
+	if g.waterView {
+		g.waterLand, err = NewWaterReflections(e.Renderer())
+		if err != nil {
+			return err
+		}
+	}
+	g.passes, err = NewAirPasses(e.Renderer(), 0.5, 0.5, 7, g.waterLand)
 	if err == nil && g.waterView {
 		e.SetCamera(mgl32.Vec3{}, mgl32.Vec3{0, 1, -0.2}, mgl32.Vec3{0, 0, 1})
 		g.waterSky, err = NewWaterSky(e.Renderer(), g.passes.Clouds)
@@ -134,6 +141,12 @@ func (g *cloudLifecycleProbe) Update(e *glyph.Engine, _ float32) {
 			g.t.Fatalf("water cache stage %d: active = %t, want %t", g.stage, g.waterSky.Active(), active)
 		}
 	}
+	if g.waterLand != nil {
+		// No opaque land is present. Reusing the atmosphere output for a
+		// reflection snapshot must preserve the image, including after resize
+		// and when the snapshot stops updating in the final stage.
+		g.waterLand.SetEnabled(p, e.ViewProjection().Inv(), g.stage != 6)
+	}
 	data := p.Bytes()
 	if err := e.Renderer().SetShaderParameters(data[:]); err != nil {
 		g.t.Fatal(err)
@@ -143,6 +156,11 @@ func (g *cloudLifecycleProbe) Update(e *glyph.Engine, _ float32) {
 
 func (g *cloudLifecycleProbe) LateUpdate(e *glyph.Engine, _ float32) {
 	state := (cloudTestEnvironment{}).State()
+	if g.waterLand != nil {
+		if err := g.waterLand.Update(e.ViewProjection().Inv(), state.SunDir, state.SunColor); err != nil {
+			g.t.Fatal(err)
+		}
+	}
 	if err := g.passes.Update(e.ViewProjection().Inv(), state.SunDir, state.SunColor); err != nil {
 		g.t.Fatal(err)
 	}

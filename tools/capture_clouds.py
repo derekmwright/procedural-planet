@@ -23,6 +23,8 @@ SCENES = {
     "water-distance": ["-sea-level=137.3", "-altitude=220", "-flight", "-heading=-72", "-pitch=-28"],
     "water-land": ["-longitude=44", "-latitude=12.6", "-altitude=125", "-flight", "-heading=90", "-pitch=0"],
     "water-mountain": ["-longitude=47.2", "-latitude=12.6", "-sea-level=1000", "-altitude=400", "-flight", "-heading=90", "-pitch=-3"],
+    "water-shore": ["-longitude=47.2", "-latitude=12.6", "-sea-level=1000", "-altitude=286", "-flight", "-heading=90", "-pitch=-3"],
+    "water-cliff": ["-longitude=47.68", "-latitude=12.6", "-sea-level=1000", "-altitude=5", "-flight", "-heading=0", "-pitch=4"],
     "sun-ridge": ["-longitude=54", "-latitude=0", "-altitude=100", "-flight", "-heading=-63.2", "-pitch=-4.58"],
     "sun-burst": ["-sea-level=137.3", "-altitude=20", "-flight", "-heading=-66.5", "-pitch=34"],
     "sun-high": ["-altitude=8300", "-flight", "-heading=-66.5", "-pitch=34"],

@@ -13,33 +13,53 @@ refinements. Both camera-to-water and water-to-land distances are capped at
 12 km, fading from 8 km. Submerged geometry is rejected: its scene colour
 already contains analytic water. Screen edges fade to the existing sky result.
 
-The source colour is unfogged opaque radiance. The trace integrates atmosphere
-along the reflected segment, then replaces the reflected sky contribution with
-a signed HDR correction weighted by Fresnel, confidence, shoreline coverage and
-foam. A depth-aware spatial filter and full-resolution water mask reconstruct
-that correction. The usual air/cloud composition then integrates eye-to-water
-exactly once. Land, sky, seabed lighting and underwater shafts are unchanged.
+The source colour is a full-resolution snapshot of unfogged scene radiance.
+The trace samples nine depth-checked colours over the hit's projected reflection
+cone. Unresolved wave variance and a small micro-ripple lobe soften land detail;
+sky, submerged geometry and unrelated depth layers return weight to the sky
+fallback. Atmosphere is integrated along the reflected segment once. The trace
+stores positive radiance premultiplied by hit confidence, rather than a signed
+difference from the sky. A depth-aware spatial reconstruction filters those two
+quantities together.
+
+The final pass replaces the sky contribution using the **full-resolution** wave
+normal, Fresnel, shoreline coverage and foam. It cannot subtract more light than
+the destination contains. This fixes coloured shoreline streaks: filtering the
+old signed correction mixed different wave normals and Fresnel weights, creating
+negative HDR channels that ACES mapped into saturated colours. The usual
+air/cloud composition then integrates eye-to-water exactly once. Visible land,
+sky, seabed lighting and underwater shafts are unchanged.
 
 The three passes run before view atmosphere and require no second scene render,
-temporal history, shared sampler slot, or engine change. Two half-resolution
-RGBA16F targets use about 31.6 MiB per swapchain image at 3840×2160. They remain
-allocated while the feature is installed; draws are disabled underwater, above
+temporal history, shared sampler slot, or engine change. The snapshot reuses the
+existing full-resolution atmosphere composition target: reflection reads finish
+before air/cloud composition overwrites it. Only one half-resolution RGBA16F
+reflection target is additional, about 15.8 MiB per swapchain image at 3840×2160.
+Removing the old second half-resolution target saves 47.5 MiB with three images.
+The standalone reflection constructor also creates the snapshot; pass the same
+`WaterReflections` to `NewAirPasses` to share it, as the showcase does. Targets
+remain allocated while installed; draws are disabled underwater, above
 12 km, with oceans off, and when the frustum cannot intersect the sea. The HUD
-and JSONL expose trace/filter/composite timings and requested/active state.
+and JSONL expose source/trace/composite timings and requested/active state.
 
 This is screen-space reflection, not full scene ray tracing. Hidden and
 off-screen land cannot be reflected. Thin geometry can be missed, source
 lighting comes from the camera-facing surface, and the reflected path includes
 clear-air haze and shadow visibility but not a second cloud-volume march.
-Waves use the trace pixel footprint; the small spatial filter is not a full
-roughness-dependent reflection convolution.
+Waves use the trace pixel footprint. The bounded source-colour cone filter is
+an approximation around one depth hit, not independently traced roughness rays.
 
 `TestWaterLandReflectionsGPU` checks current-frame source colours, preservation
 of directly visible land/sky, missing and submerged geometry, underwater
-disable, camera turns, toggles and resize with 4× MSAA. The `coast`, `water-land`
-and `water-mountain` capture presets cover a flat beach, low bay and taller
-flooded shore. Captures are under `captures/water-land-*`. Timing comparisons
-remain deferred while a local LLM shares the GPU.
+disable, camera turns, toggles and resize with 4× MSAA. Bright sky and real waves
+at three phases additionally check HDR before tonemapping: the old implementation
+produced 956, 875 and 553 negative pixels; the replacement produces zero negative
+or non-finite pixels. `TestWaterSkyLifecycleGPU` exercises reuse of the snapshot
+for atmosphere/cloud output through toggles, resize and reflection disable.
+The `coast`, `water-land`, `water-mountain`, `water-shore` and `water-cliff` capture
+presets cover beach and flooded-hill views. Captures are under
+`captures/water-land-color-*`. Timing comparisons remain deferred while a local
+LLM shares the GPU; the memory reduction follows from target allocation sizes.
 
 ## Cloud reflections and wave filtering (2026-10-17)
 
@@ -96,11 +116,12 @@ read/write aliasing. Shared sampler slots 5–6 hold the sky outputs; the existi
 wave slots 1–2 now hold their full filtered atlases. The application parameter
 block is 240 bytes.
 
-Engine [request #200](https://github.com/derekmwright/glyphengine/issues/200)
-tracks writable render-target mip views and subresource dependencies. It is a
-non-blocking way to simplify future filtered fields. The separate sampled 3D
-texture API is now used for the cloud noise consumed by the water sky cache;
-it does not replace writable wave/sky render-target mip views.
+Engine [request #200](https://github.com/derekmwright/glyphengine/issues/200) was
+closed by [PR #205](https://github.com/derekmwright/glyphengine/pull/205), merged
+on 2026-10-17 (`61f5c4489a`). Render targets now support mip allocation and
+per-level read/write ranges. The showcase still pins `af525925956a`; adopting
+the new API for the wave/sky atlases is a separate follow-up, not required for
+the shoreline colour fix. The sampled 3D API already supplies cloud noise.
 
 The HUD reports `water sky` and the sum of its six filter timings; JSONL retains
 every named pass and records requested/active reflection and filtering modes.

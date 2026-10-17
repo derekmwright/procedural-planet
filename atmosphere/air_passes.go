@@ -31,7 +31,10 @@ type AirPasses struct {
 	Clouds                           *CloudPasses
 }
 
-func NewAirPasses(r *renderer.Renderer, scale, cloudScale float32, seed uint64) (*AirPasses, error) {
+// reflections, when present, must be registered first. Its HDR snapshot is dead
+// after reflection composition, so air/cloud composition can reuse that target.
+// Pass declarations preserve the read-before-write dependency on every frame.
+func NewAirPasses(r *renderer.Renderer, scale, cloudScale float32, seed uint64, reflections *WaterReflections) (*AirPasses, error) {
 	light, err := r.CreateRenderTarget(renderer.RenderTargetDesc{Name: "air radiance and endpoint", Format: renderer.TargetRGBA16F, Scale: scale})
 	if err != nil {
 		return nil, err
@@ -40,9 +43,14 @@ func NewAirPasses(r *renderer.Renderer, scale, cloudScale float32, seed uint64) 
 	if err != nil {
 		return nil, err
 	}
-	composed, err := r.CreateRenderTarget(renderer.RenderTargetDesc{Name: "atmosphere composed scene", Format: renderer.TargetRGBA16F, Scale: 1, Filter: renderer.FilterLinear})
-	if err != nil {
-		return nil, err
+	var composed *renderer.RenderTarget
+	if reflections != nil {
+		composed = reflections.scene
+	} else {
+		composed, err = r.CreateRenderTarget(renderer.RenderTargetDesc{Name: "atmosphere composed scene", Format: renderer.TargetRGBA16F, Scale: 1, Filter: renderer.FilterLinear})
+		if err != nil {
+			return nil, err
+		}
 	}
 	depth := r.SceneDepth()
 	scatter, err := r.CreateAppPass(renderer.AppPassDesc{Name: "air scattering", Stage: renderer.StageBeforeBloom, Target: light, Fullscreen: true, Vert: shaders.DepthResolveVertSpv, Frag: airScatter, Reads: []*renderer.Texture{depth}, Timed: true})
